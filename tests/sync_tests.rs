@@ -506,7 +506,15 @@ async fn test_sync_run_sync_extended_resources() -> Result<(), anyhow::Error> {
         }
     });
 
-    engine.run_sync(&local_cfg, &SyncOptions { mode: SyncMode::Plan, prune: false }).await?;
+    engine
+        .run_sync(
+            &local_cfg,
+            &SyncOptions {
+                mode: SyncMode::Plan,
+                prune: false,
+            },
+        )
+        .await?;
     Ok(())
 }
 
@@ -514,7 +522,7 @@ async fn test_sync_run_sync_extended_resources() -> Result<(), anyhow::Error> {
 async fn test_sync_singletons_ui() -> Result<(), anyhow::Error> {
     use client::{AppType, StarrClient};
     use sync::{SyncEngine, SyncMode, SyncOptions};
-    use wiremock::matchers::{method, path, body_json};
+    use wiremock::matchers::{body_json, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     let server = MockServer::start().await;
@@ -551,10 +559,16 @@ async fn test_sync_singletons_ui() -> Result<(), anyhow::Error> {
         }
     });
 
-    engine.run_sync(&local_cfg, &SyncOptions { mode: SyncMode::Apply, prune: false }).await?;
+    engine
+        .run_sync(
+            &local_cfg,
+            &SyncOptions {
+                mode: SyncMode::Apply,
+                prune: false,
+            },
+        )
+        .await?;
 
     assert_eq!(put_mock.received_requests().await.len(), 1);
     Ok(())
 }
-
-

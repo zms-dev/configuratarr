@@ -146,9 +146,7 @@ pub enum ResourceSubcommands {
     #[command(about = "List all server-configured resources")]
     List,
     #[command(about = "Delete a resource by name")]
-    Delete {
-        name: String,
-    },
+    Delete { name: String },
     #[command(about = "Add a new resource configuration dynamically")]
     Add {
         #[arg(

@@ -237,7 +237,9 @@ async fn run_resource(
             // Verify if resource already exists
             let list = client.get_resources(endpoint).await?;
             if list.as_array().is_some_and(|items| {
-                items.iter().any(|i| i.get("name").and_then(|v| v.as_str()) == Some(name))
+                items
+                    .iter()
+                    .any(|i| i.get("name").and_then(|v| v.as_str()) == Some(name))
             }) {
                 return Err(anyhow::anyhow!("Resource '{}' already exists", name));
             }
@@ -341,9 +343,8 @@ async fn build_payload(
                     .get("fields")
                     .and_then(|v| v.as_array())
                     .map(|arr| {
-                        arr.iter().any(|f| {
-                            f.get("name").and_then(|n| n.as_str()) == Some(k.as_str())
-                        })
+                        arr.iter()
+                            .any(|f| f.get("name").and_then(|n| n.as_str()) == Some(k.as_str()))
                     })
                     .unwrap_or(false);
                 if is_schema_field {
