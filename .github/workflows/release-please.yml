@@ -52,6 +52,9 @@ jobs:
 
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@v16
+        with:
+          extra-conf: |
+            extra-platforms = aarch64-linux
 
       - name: Build via Nix
         run: |
