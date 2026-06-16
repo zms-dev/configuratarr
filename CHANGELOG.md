@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/zms-dev/configuratarr/compare/v0.1.0...v0.1.1) (2026-06-16)
+
+
+### Bug Fixes
+
+* add aarch64-linux to extra-platforms in release-please workflow ([e90d322](https://github.com/zms-dev/configuratarr/commit/e90d32200bb4f92b41c38e769d74759cd69aa6ed))
+
 ## 0.1.0 (2026-06-16)
 
 
