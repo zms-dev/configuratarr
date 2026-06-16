@@ -50,6 +50,36 @@ configuratarr radarr ui update --field theme=dark
 
 For more CLI command examples, see the [CLI Commands Reference](docs/COMMANDS.md).
 
+### NixOS Module
+```nix
+{ inputs, ... }: {
+  imports = [ inputs.configuratarr.nixosModules.default ];
+
+  services.configuratarr = {
+    enable = true;
+    prune = true;
+    settings = {
+      # Declarative configuration options go here
+      # e.g., ui = { theme = "dark"; };
+    };
+  };
+}
+```
+
+### Home Manager Module
+```nix
+{ inputs, ... }: {
+  imports = [ inputs.configuratarr.homeManagerModules.default ];
+
+  services.configuratarr = {
+    enable = true;
+    settings = {
+      # Declarative configuration options go here
+    };
+  };
+}
+```
+
 ---
 
 ## Development
@@ -66,3 +96,9 @@ Regenerate command-line documentation from the clap schema:
 ```bash
 GENERATE_DOCS=1 cargo test
 ```
+
+Regenerate NixOS and Home Manager options documentation:
+```bash
+nix run .#generate-docs
+```
+

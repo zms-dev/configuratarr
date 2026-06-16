@@ -1,4 +1,10 @@
-{ lib, rustPlatform, pkg-config, openssl, docs ? null }:
+{
+  lib,
+  rustPlatform,
+  pkg-config,
+  openssl,
+  docs ? null,
+}:
 
 rustPlatform.buildRustPackage {
   pname = "configuratarr";

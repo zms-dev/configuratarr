@@ -40,6 +40,8 @@
             default = configuratarr;
           };
 
+          formatter = pkgs.nixfmt-tree;
+
           apps.generate-docs = {
             type = "app";
             program = "${pkgs.writeShellScript "generate-docs" ''
@@ -78,7 +80,8 @@
         }
       );
     in
-    outputs // {
+    outputs
+    // {
       nixosModules.default = import ./modules/nixos.nix;
       homeManagerModules.default = import ./modules/home-manager.nix;
     };
