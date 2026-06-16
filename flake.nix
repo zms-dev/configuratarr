@@ -1,6 +1,15 @@
 {
   description = "Configuratarr - A declarative configuration stack-sync engine for Sonarr, Radarr, Prowlarr, Lidarr, and Readarr.";
 
+  nixConfig = {
+    extra-substituters = [
+      "https://configuratarr.cachix.org"
+    ];
+    extra-trusted-public-keys = [
+      "configuratarr.cachix.org-1:3KlUWHpUzczNIKBFaSCWP3YNEc6N1S3OR3TQxcJmMdY="
+    ];
+  };
+
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     fenix = {
