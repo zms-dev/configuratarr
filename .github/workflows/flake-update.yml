@@ -20,7 +20,7 @@ jobs:
           ref: dev
 
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@v16
+        uses: DeterminateSystems/nix-installer-action@v22
 
       - name: Set up Cachix
         uses: cachix/cachix-action@v17
