@@ -455,21 +455,26 @@ impl SyncEngine {
                 if local_val.is_null() {
                     continue;
                 }
-                let local_obj = local_val
-                    .as_object()
-                    .ok_or_else(|| anyhow::anyhow!("Expected object for singleton '{}'", resource_key))?;
+                let local_obj = local_val.as_object().ok_or_else(|| {
+                    anyhow::anyhow!("Expected object for singleton '{}'", resource_key)
+                })?;
 
                 let server_val = match self.client.get_resources(endpoint).await {
                     Ok(val) => val,
                     Err(e) => {
-                        tracing::warn!("Failed to fetch singleton '{}' from endpoint '{}': {}. Skipping.", resource_key, endpoint, e);
+                        tracing::warn!(
+                            "Failed to fetch singleton '{}' from endpoint '{}': {}. Skipping.",
+                            resource_key,
+                            endpoint,
+                            e
+                        );
                         continue;
                     }
                 };
 
-                let server_obj = server_val
-                    .as_object()
-                    .ok_or_else(|| anyhow::anyhow!("Expected object from endpoint '{}'", endpoint))?;
+                let server_obj = server_val.as_object().ok_or_else(|| {
+                    anyhow::anyhow!("Expected object from endpoint '{}'", endpoint)
+                })?;
 
                 let mut updated_obj = server_obj.clone();
                 let mut has_diff = false;
@@ -490,7 +495,10 @@ impl SyncEngine {
                 if has_diff {
                     println!(
                         "{}",
-                        colored::Colorize::yellow(&*format!("~ [Update] Global Singleton Config '{}':", resource_key))
+                        colored::Colorize::yellow(&*format!(
+                            "~ [Update] Global Singleton Config '{}':",
+                            resource_key
+                        ))
                     );
                     for line in plan_lines {
                         println!("{}", colored::Colorize::cyan(&*line));

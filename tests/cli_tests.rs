@@ -55,7 +55,6 @@ fn test_cli_update_parse_ok() {
     assert!(res.is_ok());
 }
 
-
 #[test]
 fn test_cli_conflicting_plan_apply_fails() {
     let res = cli::Cli::try_parse_from(["configuratarr", "sync", "--plan", "--apply"]);
@@ -89,4 +88,3 @@ async fn test_cli_global_wait_timeout() -> Result<(), anyhow::Error> {
     assert!(res.is_err());
     Ok(())
 }
-

@@ -238,13 +238,22 @@ pub fn resolve_connection(
 fn map_http_error(method: &str, path: &str, status: reqwest::StatusCode) -> anyhow::Error {
     let msg = match status {
         reqwest::StatusCode::UNAUTHORIZED => {
-            format!("{} '{}' failed: 401 Unauthorized. Please check if your API key is correct or configured.", method, path)
+            format!(
+                "{} '{}' failed: 401 Unauthorized. Please check if your API key is correct or configured.",
+                method, path
+            )
         }
         reqwest::StatusCode::FORBIDDEN => {
-            format!("{} '{}' failed: 403 Forbidden. Access is denied.", method, path)
+            format!(
+                "{} '{}' failed: 403 Forbidden. Access is denied.",
+                method, path
+            )
         }
         reqwest::StatusCode::NOT_FOUND => {
-            format!("{} '{}' failed: 404 Not Found. Please verify the API endpoint exists.", method, path)
+            format!(
+                "{} '{}' failed: 404 Not Found. Please verify the API endpoint exists.",
+                method, path
+            )
         }
         s => {
             format!("{} '{}' failed with HTTP status: {}", method, path, s)
