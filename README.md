@@ -11,6 +11,16 @@ It allows you to manage application settings (download clients, indexers, profil
 
 ---
 
+## Motivation
+
+The main issue with managing the `*arr` stack (Sonarr, Radarr, etc.) declaratively is that almost all configuration—indexers, download clients, profiles, and notifications—is stored in a stateful SQLite database. The static `config.xml` file only covers basic boot settings.
+
+Configuratarr solves this by acting as a declarative sync layer. It reads a desired state YAML file, compares it against the running app's API, and makes the necessary REST calls to sync the settings without touching the database directly.
+
+The tool is split into a standalone Rust CLI and a set of Nix modules. Keeping the CLI generic ensures the engine remains portable (usable in Docker, Kubernetes, or non-Nix systems), while the Nix modules act as wrappers to handle systemd orchestration and option generation.
+
+---
+
 ## 📚 Documentation
 
 *   [**Configuration Reference (`docs/CONFIG.md`)**](docs/CONFIG.md): YAML schema structure, resource configurations, and secrets resolution.
