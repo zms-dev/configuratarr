@@ -16,6 +16,7 @@
       url = "github:nix-community/fenix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    crane.url = "github:ipetkov/crane";
     flake-utils.url = "github:numtide/flake-utils";
   };
 
@@ -24,6 +25,7 @@
       self,
       nixpkgs,
       fenix,
+      crane,
       flake-utils,
       ...
     }:
@@ -32,14 +34,61 @@
         system:
         let
           pkgs = import nixpkgs { inherit system; };
-          rustToolchain = fenix.packages.${system}.stable.withComponents [
-            "rustc"
-            "cargo"
-            "clippy"
-            "rustfmt"
-            "rust-src"
+
+          mkTool =
+            name:
+            pkgs.writeShellScriptBin name ''
+              exec ${pkgs.python3}/bin/python3 ${toString ./.}/tools/${name}.py "$@"
+            '';
+          tools = map mkTool [
+            "list_resources"
+            "get_resource"
+            "list_paths"
+            "get_path"
+            "compare_schemas"
+            "diff_resource"
+            "gen_resource_model"
           ];
-          configuratarr = pkgs.callPackage ./pkgs/default.nix {
+
+          inherit
+            (import ./nix/crane.nix {
+              inherit pkgs fenix crane;
+              root = ./.;
+            })
+            rustToolchain
+            craneLib
+            commonArgs
+            cargoArtifacts
+            ;
+
+          mkServiceChecks = import ./nix/mk-service-checks.nix {
+            inherit
+              pkgs
+              craneLib
+              commonArgs
+              cargoArtifacts
+              ;
+          };
+
+          configDocGen = craneLib.buildPackage (
+            commonArgs
+            // {
+              inherit cargoArtifacts;
+              pname = "config-doc-gen";
+              cargoExtraArgs = "-p config-doc-gen --bin config-doc-gen";
+            }
+          );
+
+          cmdDocGen = craneLib.buildPackage (
+            commonArgs
+            // {
+              inherit cargoArtifacts;
+              pname = "cmd-doc-gen";
+              cargoExtraArgs = "-p cmd-doc-gen --bin cmd-doc-gen";
+            }
+          );
+
+          configuratarr = pkgs.callPackage ./nix/package.nix {
             docs = pkgs.callPackage ./modules/docs.nix { };
           };
         in
@@ -49,43 +98,39 @@
             default = configuratarr;
           };
 
+          # `workspace-tests` runs every crate's unit + integration tests
+          # (`cargo nextest`, whole workspace, `#[ignore]`d e2e skipped — those run
+          # in each service's `-e2e` VM check). Per-service checks add the VM e2e.
+          # Add new services: // mkServiceChecks "sonarr-v3" (import ./nix/e2e/sonarr-v3.nix { inherit pkgs; })
+          checks =
+            {
+              workspace-tests = craneLib.cargoNextest (
+                commonArgs
+                // {
+                  inherit cargoArtifacts;
+                  cargoNextestExtraArgs = "--workspace";
+                }
+              );
+            }
+            // mkServiceChecks "radarr-v3" (import ./nix/e2e/radarr-v3.nix { inherit pkgs; });
+
           formatter = pkgs.nixfmt-tree;
 
           apps.generate-docs = {
             type = "app";
             program = "${pkgs.writeShellScript "generate-docs" ''
               echo "==> Copying generated NixOS and Home Manager options docs..."
-              cp -f ${configuratarr.docs}/NIXOS_OPTIONS.md docs/NIXOS_OPTIONS.md
-              cp -f ${configuratarr.docs}/HOME_MANAGER_OPTIONS.md docs/HOME_MANAGER_OPTIONS.md
+              cp -f ${configuratarr.docs}/nixos_options.md docs/nixos_options.md
+              cp -f ${configuratarr.docs}/home_manager_options.md docs/home_manager_options.md
+              echo "==> Generating service config docs..."
+              ${configDocGen}/bin/config-doc-gen --output-dir docs
+              echo "==> Generating CLI command docs..."
+              ${cmdDocGen}/bin/cmd-doc-gen > docs/commands.md
               echo "==> Done!"
             ''}";
           };
 
-          devShells.default = pkgs.mkShell {
-            buildInputs = with pkgs; [
-              rustToolchain
-              python3
-              pkg-config
-              openssl
-
-              # Dev & Testing Utilities
-              cargo-nextest
-              shellcheck
-              jq
-              curl
-            ];
-
-            shellHook = ''
-              echo "=== Configuratarr Nix DevShell ==="
-              rustc --version
-              cargo --version
-
-              # Environment variables
-              export RUST_BACKTRACE=1
-              export RUST_LOG=info
-              export CARGO_PROFILE_DEV_BUILD_OVERRIDE_DEBUG=true
-            '';
-          };
+          devShells = import ./nix/shells.nix { inherit pkgs rustToolchain tools; };
         }
       );
     in

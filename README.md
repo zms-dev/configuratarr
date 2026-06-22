@@ -5,71 +5,112 @@
 [![Cachix Cache](https://img.shields.io/badge/Cachix-configuratarr-blue.svg)](https://configuratarr.cachix.org)
 [![Nix Built](https://img.shields.io/badge/Nix-Flake-blue.svg?logo=nixos&logoColor=white)](https://nixos.org)
 
-Configuratarr is a declarative, idempotent configuration synchronization engine for the `*arr` stack (Radarr, Sonarr, Lidarr, Prowlarr, Readarr) written in Rust.
+Declarative, idempotent configuration sync engine for the `*arr` stack (Radarr, Sonarr, Lidarr, Prowlarr, Readarr) written in Rust.
 
-It allows you to manage application settings (download clients, indexers, profiles, notifications, folder paths, and global configurations) as code, making it ideal for GitOps workflows, automated deployments, and stateless systems like NixOS.
-
----
-
-## Motivation
-
-The main issue with managing the `*arr` stack (Sonarr, Radarr, etc.) declaratively is that almost all configuration—indexers, download clients, profiles, and notifications—is stored in a stateful SQLite database. The static `config.xml` file only covers basic boot settings.
-
-Configuratarr solves this by acting as a declarative sync layer. It reads a desired state YAML file, compares it against the running app's API, and makes the necessary REST calls to sync the settings without touching the database directly.
-
-The tool is split into a standalone Rust CLI and a set of Nix modules. Keeping the CLI generic ensures the engine remains portable (usable in Docker, Kubernetes, or non-Nix systems), while the Nix modules act as wrappers to handle systemd orchestration and option generation.
+Reads a desired-state YAML file, diffs it against each app's live REST API, and pushes only the delta. Designed for GitOps workflows and stateless NixOS deployments where application configuration would otherwise live only in a stateful SQLite database.
 
 ---
 
-## 📚 Documentation
+## Supported services
 
-*   [**Configuration Reference (`docs/CONFIG.md`)**](docs/CONFIG.md): YAML schema structure, resource configurations, and secrets resolution.
-*   [**CLI Commands Reference (`docs/COMMANDS.md`)**](docs/COMMANDS.md): Syntax and usage guide for sync, status, add, delete, and update commands.
-*   [**NixOS Options (`docs/NIXOS_OPTIONS.md`)**](docs/NIXOS_OPTIONS.md): Configuration options for the NixOS service module.
-*   [**Home Manager Options (`docs/HOME_MANAGER_OPTIONS.md`)**](docs/HOME_MANAGER_OPTIONS.md): Configuration options for the Home Manager service module.
+| App | API | Config `type` | Status |
+|-----|-----|---------------|--------|
+| Radarr | v3 | `radarr-v3` | ✅ Supported |
+| Sonarr | v3 | `sonarr-v3` | 🚧 Planned |
+| Lidarr | v1 | `lidarr-v1` | 🚧 Planned |
+| Prowlarr | v1 | `prowlarr-v1` | 🚧 Planned |
+| Readarr | — | — | 🚧 Planned |
 
----
-
-## ✨ Key Features
-
-*   **Idempotent Synchronization**: Compares your local YAML configuration against the active server state, applying only the necessary additions, updates, or deletions.
-*   **Dynamic Secret Resolution**: Resolves credentials at runtime from environment variables (`env://`) or decrypted files (`file://`), preventing secrets from leaking into your Nix store or configuration repositories.
-*   **Cookie Session Fallback**: Automatically captures authentication cookies if no API key is provided, ensuring seamless first-time bootstraps and credential rotations.
-*   **Granular CLI Control**: Direct subcommands to query and mutate singletons or resource lists (e.g., adding download clients, updating UI preferences) across target apps.
+More of the ecosystem (Jellyfin, Bazarr, Jellyseerr, …) is on the radar. The engine is service-agnostic — adding one is filling in a template, not changing the core. See [`docs/contributors.md`](docs/contributors.md).
 
 ---
 
-## 🚀 Getting Started
+## How it works
 
-### 1. Declarative Synchronization
+Almost all meaningful `*arr` configuration — indexers, download clients, quality profiles, notifications — is stored in a SQLite database, not in the static `config.xml`. There is no built-in way to declare this configuration as code.
 
-Verify planned changes without mutating server state (dry-run):
+Configuratarr acts as a declarative sync layer. You describe the desired state in a YAML file; it compares that against the running app's REST API and makes the necessary calls to converge. It never touches the database directly.
+
+---
+
+## Usage
+
+Preview the planned changes without touching anything:
+
 ```bash
-configuratarr sync --config configuratarr.yaml --plan
+configuratarr --config configuratarr.yaml plan
 ```
 
-Apply the configuration state to all targets:
+Apply — shows the same plan, then asks for confirmation before writing:
+
 ```bash
-configuratarr sync --config configuratarr.yaml --apply
+configuratarr --config configuratarr.yaml apply
 ```
 
-### 2. Direct CLI Operations
+Skip the prompt for CI, scripts, or systemd:
 
-List all configured download clients on Radarr:
 ```bash
-configuratarr radarr download-client list
+configuratarr --config configuratarr.yaml apply --auto-approve
 ```
 
-Update UI theme preferences directly:
+Also delete server-side resources that aren't in your config:
+
 ```bash
-configuratarr radarr ui update --field theme=dark
+configuratarr --config configuratarr.yaml apply --prune
 ```
+
+Wait for each app's API to be ready before doing anything — handy when configuratarr starts alongside the apps (e.g. on boot), so a still-starting Radarr doesn't fail the run:
+
+```bash
+configuratarr --config configuratarr.yaml --wait-for-healthy apply
+```
+
+See [`docs/commands.md`](docs/commands.md) for full CLI reference.
 
 ---
 
-## ❄️ Nix Integration
+## Configuration
 
-### NixOS Module
+The config file is a YAML document. Each top-level key is an instance you name, and `type` picks which app it is — so you can manage one app or a whole stack from a single file:
+
+```yaml
+my-radarr:                     # any name you like
+  type: radarr-v3              # which app this is
+  url: "http://radarr.local:7878"
+  api_key: "${env.RADARR_API_KEY}"
+
+  tags:
+    - label: managed
+
+  quality_profiles:
+    - name: HD-1080p
+      upgrade_allowed: true
+      cutoff: 7
+
+  download_clients:
+    - name: qBittorrent
+      implementation: QBittorrent   # picks the download-client type
+      protocol: torrent
+      host: qbittorrent.local       # settings sit right here, no nesting
+      tags: ["${ref.tag.managed}"]  # link to another resource by its name
+
+# add another block (e.g. `my-sonarr: { type: sonarr-v3, ... }`) to manage more apps
+```
+
+Any field can use a template expression, resolved at apply time:
+
+- `${env.VAR}` — an environment variable (handy for secrets)
+- `${file./path/to/secret}` — the contents of a file
+- `${ref.tag.managed}` — another resource, by name (configuratarr figures out the id and the right order)
+
+See [`docs/radarr-v3-config.md`](docs/radarr-v3-config.md) for every field of every resource.
+
+---
+
+## Nix Integration
+
+### NixOS
+
 ```nix
 { inputs, ... }: {
   imports = [ inputs.configuratarr.nixosModules.default ];
@@ -78,13 +119,21 @@ configuratarr radarr ui update --field theme=dark
     enable = true;
     prune = true;
     settings = {
-      # Declarative configuration options
+      my-radarr = {
+        type = "radarr-v3";
+        url = "http://localhost:7878";
+        api_key = "\${env.RADARR_API_KEY}";
+        tags = [{ label = "managed"; }];
+      };
     };
   };
 }
 ```
 
-### Home Manager Module
+See [`docs/nixos_options.md`](docs/nixos_options.md) for all options.
+
+### Home Manager
+
 ```nix
 { inputs, ... }: {
   imports = [ inputs.configuratarr.homeManagerModules.default ];
@@ -92,26 +141,41 @@ configuratarr radarr ui update --field theme=dark
   services.configuratarr = {
     enable = true;
     settings = {
-      # Declarative configuration options
+      my-radarr = {
+        type = "radarr-v3";
+        url = "http://localhost:7878";
+        api_key = "\${env.RADARR_API_KEY}";
+      };
     };
   };
 }
 ```
 
+See [`docs/home_manager_options.md`](docs/home_manager_options.md) for all options.
+
 ---
 
-## 🛠️ Development
+## Development
 
-This project uses Nix Flakes to provide a fully reproducible development shell.
+Requires [Nix](https://nixos.org) with flakes enabled. All tools live inside the devshell.
 
-### Run Tests
-Execute the Rust unit and integration tests:
 ```bash
-nix develop -c cargo test
+nix develop          # default shell: cargo, nextest, OpenAPI tools
+cargo build
+cargo nextest run
+nix flake check      # unit tests + NixOS VM e2e tests
 ```
 
-### Regenerate Options Documentation
-Rebuild the markdown option reference guides from option schemas:
+### E2E tests (fast local loop)
+
 ```bash
-nix run .#generate-docs
+nix develop .#e2e-radarr   # starts Radarr, exports RADARR_URL + RADARR_API_KEY
+cargo nextest run -p radarr-v3 --run-ignored all
+```
+
+### Regenerate docs
+
+```bash
+nix run .#generate-docs    # writes docs/commands.md, docs/radarr-v3-config.md,
+                           # docs/nixos_options.md, docs/home_manager_options.md
 ```

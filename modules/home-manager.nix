@@ -5,8 +5,6 @@
   ...
 }:
 
-with lib;
-
 let
   cfg = config.services.configuratarr;
   yamlFormat = pkgs.formats.yaml { };
@@ -18,7 +16,7 @@ in
     enableDescription = "Configuratarr user configuration service";
   };
 
-  config = mkIf cfg.enable {
+  config = lib.mkIf cfg.enable {
     systemd.user.services.configuratarr = {
       Unit = {
         Description = "Configuratarr Stack Configuration Sync";
@@ -27,14 +25,16 @@ in
 
       Service = {
         Type = "oneshot";
-        ExecStart = ''
-          ${cfg.package}/bin/configuratarr sync \
-            --config ${configFile} \
-            ${lib.optionalString cfg.prune "--prune"} \
-            ${lib.optionalString cfg.wait "--wait"} \
-            --wait-timeout ${toString cfg.waitTimeout} \
-            --apply --auto-approve
-        '';
+        ExecStart = lib.concatStringsSep " " (
+          [
+            "${cfg.package}/bin/configuratarr"
+            "--config ${configFile}"
+            "apply"
+            # Non-interactive: the user service has no TTY for the confirm prompt.
+            "--auto-approve"
+          ]
+          ++ lib.optional cfg.prune "--prune"
+        );
       };
     };
   };

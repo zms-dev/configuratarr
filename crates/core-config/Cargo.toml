@@ -1,0 +1,11 @@
+[package]
+name    = "core-config"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+core-lib  = { path = "../core" }
+radarr-v3 = { path = "../radarr-v3" }
+anyhow.workspace       = true
+serde_json.workspace   = true
+serde-saphyr.workspace = true

@@ -8,7 +8,7 @@ let
   # Extend pkgs to include configuratarr, which is used as the default for options.services.configuratarr.package
   pkgsDocs = pkgs.extend (
     final: prev: {
-      configuratarr = final.callPackage ../pkgs/default.nix { };
+      configuratarr = final.callPackage ../nix/package.nix { };
     }
   );
 
@@ -58,7 +58,7 @@ pkgsDocs.runCommand "configuratarr-options-docs" { } ''
     mkdir -p $out
 
     # 1. Generate NixOS Options with clean relative paths and header
-    cat << 'EOF' > $out/NIXOS_OPTIONS.md
+    cat << 'EOF' > $out/nixos_options.md
   # NixOS Module Options
 
   This document details the configuration options available for the Configuratarr NixOS module.
@@ -68,10 +68,10 @@ pkgsDocs.runCommand "configuratarr-options-docs" { } ''
       -e 's|\(file:///nix/store/[a-z0-9]{32}-source/|(../|g' \
       -e 's|/nix/store/[a-z0-9]{32}-source/|../|g' \
       -e 's|\\\.|\.|g' \
-      ${nixosDocs.optionsCommonMark} >> $out/NIXOS_OPTIONS.md
+      ${nixosDocs.optionsCommonMark} >> $out/nixos_options.md
 
     # 2. Generate Home Manager Options with clean relative paths and header
-    cat << 'EOF' > $out/HOME_MANAGER_OPTIONS.md
+    cat << 'EOF' > $out/home_manager_options.md
   # Home Manager Module Options
 
   This document details the configuration options available for the Configuratarr Home Manager module.
@@ -81,5 +81,5 @@ pkgsDocs.runCommand "configuratarr-options-docs" { } ''
       -e 's|\(file:///nix/store/[a-z0-9]{32}-source/|(../|g' \
       -e 's|/nix/store/[a-z0-9]{32}-source/|../|g' \
       -e 's|\\\.|\.|g' \
-      ${hmDocs.optionsCommonMark} >> $out/HOME_MANAGER_OPTIONS.md
+      ${hmDocs.optionsCommonMark} >> $out/home_manager_options.md
 ''
