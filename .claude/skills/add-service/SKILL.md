@@ -3,9 +3,10 @@ name: add-service
 description: >
   Full checklist for adding a new API service crate to configuratarr (sonarr-v3, lidarr-v1,
   prowlarr-v1, jellyfin, etc.). Covers scaffolding, Cargo wiring, the #[service] struct,
-  registering in core-config + config-doc-gen, the test layout via core-testkit, and the Nix
-  e2e wiring. Auto-triggers when: starting a new service crate, scaffolding <api>-<version>,
-  wiring a service into the registry, or setting up a service's tests/Nix.
+  registering in the central service-registry table (one row, feeds core-config + config-doc-gen),
+  the test layout via core-testkit, and the Nix e2e wiring. Auto-triggers when: starting a new
+  service crate, scaffolding <api>-<version>, wiring a service into the registry, or setting up a
+  service's tests/Nix.
 ---
 
 # Adding a New Service Crate
@@ -118,11 +119,13 @@ Declaring `health = "<path>"` wires the service into `--wait-for-healthy`: the C
 
 ## 5. Register + announce
 
-- `crates/core-config/src/lib.rs` — add a `ServiceInstance` variant + dep:
-  `#[serde(rename = "<api>-<version>")] <ApiVersion>(<api_version>::<Api>),` (and the crate dep in `core-config/Cargo.toml`).
-- `crates/config-doc-gen/src/main.rs` — add one line to the `docs` array:
-  `("<api>-<version>", render_service::<<api_version>::<Api>>("<Human Name>"))` + the crate dep. (Doc-gen is generic — providers/nested types document themselves.)
+The registry is centralized in `crates/service-registry/src/lib.rs` — **one table, two consumers**. A row is `Variant => "<api>-<version>" : <api_version>::<Api> = "<Human Name>"`, and the `"<api>-<version>"` tag **doubles as the Cargo feature** that gates the service. Do **not** hand-edit a `ServiceInstance` match arm or the doc-gen array — both are macro-generated from this table.
+
+- `crates/service-registry/src/lib.rs` — add one row to the `service_registry!` table. This feeds **both** the `core-config` dispatch enum (`ServiceInstance`) and the `config-doc-gen` renderer.
+- `crates/core-config/Cargo.toml` **and** `crates/config-doc-gen/Cargo.toml` — add the crate as an `optional = true` dep, add a `<api>-<version> = ["dep:<api>-<version>"]` line under `[features]`, and add the feature to each `default = [...]` list. (The macro gates every variant/arm/doc-entry with `#[cfg(feature = "<api>-<version>")]`, so a single-service build is `--no-default-features --features <api>-<version>`.)
 - `README.md` — flip the service's row in the **Supported services** table to `✅ Supported` (add a row if it's a new app, with its API version + config `type`).
+
+(Doc-gen is generic — providers/nested types document themselves.)
 
 ## 6. Tests (thin — harness is shared)
 
@@ -157,6 +160,6 @@ nix develop --command cargo nextest run -p <svc>                           # uni
 nix develop --command cargo clippy --workspace --all-targets               # 0 warnings
 nix develop --command cargo fmt --check                                    # 0 diffs
 nix run .#generate-docs                                                     # regen docs/<svc>-config.md + options
-nix develop .#e2e-<api> --command cargo nextest run -p <svc> --test e2e --run-ignored all   # live e2e (HTTP/auth path)
+nix develop .#e2e-<api> --command cargo nextest run -p <svc> --test e2e --run-ignored all -j1   # live e2e (HTTP/auth path; -j1: shared live instance, parallel races)
 ```
-Plus non-command checks: README **Supported services** row → ✅ (§5); `core-config` + `config-doc-gen` compile the new variant; `specs/<svc>.json` no longer exists (moved in-crate). Full doc-sync map: `keep-docs-current` skill.
+Plus non-command checks: README **Supported services** row → ✅ (§5); the `service_registry!` table has the new row and both consumers carry its feature/dep (verify the gated slice builds: `cargo build -p core-config -p config-doc-gen --no-default-features --features <api>-<version>`); `specs/<svc>.json` no longer exists (moved in-crate). Full doc-sync map: `keep-docs-current` skill.

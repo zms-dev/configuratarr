@@ -4,7 +4,9 @@
 //! decode, with the desired resource state retained as the raw config `Value`
 //! (apply is value-driven; the typed service holds connection only).
 
-use core_config::{ServiceInstance, load_str};
+#[cfg(feature = "radarr-v3")]
+use core_config::ServiceInstance;
+use core_config::load_str;
 
 const CONFIG: &str = r#"
 home-radarr:
@@ -18,6 +20,7 @@ home-radarr:
   media_management: {}
 "#;
 
+#[cfg(feature = "radarr-v3")]
 #[test]
 fn loads_a_radarr_instance() {
     let cfg = load_str(CONFIG).unwrap();
@@ -44,6 +47,7 @@ fn loads_a_radarr_instance() {
     assert!(inst.config.get("media_management").is_some());
 }
 
+#[cfg(feature = "radarr-v3")]
 #[test]
 fn resolves_env_in_credentials() {
     // `${env.*}` resolves at load time; `${ref.*}` would be left for apply.

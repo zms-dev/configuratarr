@@ -44,7 +44,7 @@ pkgs.mkShell {
       export SONARR_API_KEY="$_SONARR_API_KEY"
       echo "  Sonarr ready — $SONARR_URL"
       echo ""
-      echo "  cargo nextest run -p sonarr-v3 --run-ignored all"
+      echo "  cargo nextest run -p sonarr-v3 --run-ignored all -j1"
     else
       echo "  Sonarr failed to start — check $_SONARR_DATA/sonarr.log"
       kill "$_SONARR_PID" 2>/dev/null

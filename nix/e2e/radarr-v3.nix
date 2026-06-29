@@ -16,7 +16,9 @@ pkgs.testers.nixosTest {
     ).strip()
     machine.succeed(
       f"RADARR_URL=http://localhost:7878 RADARR_API_KEY={api_key} "
-      f"radarr-v3-e2e --include-ignored 2>&1"
+      # --test-threads=1: e2e tests share one live instance (global tag list,
+      # prune deletes all); parallel runs race. Run serially.
+      f"radarr-v3-e2e --include-ignored --test-threads=1 2>&1"
     )
   '';
 }

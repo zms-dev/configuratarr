@@ -264,6 +264,7 @@ dependencies = [
  "clap",
  "core-lib",
  "radarr-v3",
+ "service-registry",
  "sonarr-v3",
 ]
 
@@ -296,6 +297,7 @@ dependencies = [
  "radarr-v3",
  "serde-saphyr",
  "serde_json",
+ "service-registry",
  "sonarr-v3",
 ]
 
@@ -1565,6 +1567,10 @@ dependencies = [
  "ryu",
  "serde",
 ]
+
+[[package]]
+name = "service-registry"
+version = "0.1.0"
 
 [[package]]
 name = "sharded-slab"

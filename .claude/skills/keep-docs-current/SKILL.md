@@ -37,7 +37,7 @@ Regenerate all at once: `nix run .#generate-docs`.
 |---|---|
 | **A CLI flag / command** | regen `commands.md`; the README **Usage** section; `CLAUDE.md` if it's a workflow standard |
 | **A resource** (fields, a new one) | regen `<service>-config.md`; write `///` comments on the struct + fields; the `add-resource` skill *if the pattern itself changed* |
-| **A new service crate** | the README **Supported services** row (flip to ✅); the `core-config` + `config-doc-gen` registries; the `modules/nixos.nix` `after` list; regen `<service>-config.md`; the `add-service` skill *if the checklist changed* |
+| **A new service crate** | the README **Supported services** row (flip to ✅); the `service_registry!` table in `crates/service-registry/` (one row — drives both `core-config` + `config-doc-gen`) plus the optional-dep + `[features]` lines in those two crates' `Cargo.toml`; the `modules/nixos.nix` `after` list; regen `<service>-config.md`; the `add-service` skill *if the checklist changed* |
 | **Engine internals / a new concept or seam** | the `core-architecture` skill; `CLAUDE.md` if it's a new standard/guardrail |
 | **A contribution procedure** | the `add-resource` / `add-service` skills; `docs/contributors.md` |
 | **Removed / renamed a crate, type, or attribute** | grep the whole tree for the old name and fix every doc/comment that still mentions it (see below) |

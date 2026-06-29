@@ -1,7 +1,7 @@
 //! Generates `docs/<service>-config.md` from the service descriptors. Walks each
 //! `Service`'s `ServiceDescriptor` and renders a field table per resource using
-//! `engine::field_docs` — no schemars, no derives. Adding a service is one line
-//! in [`main`].
+//! `engine::field_docs` — no schemars, no derives. Adding a service is one row in
+//! [`service_registry::service_registry`].
 
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -23,17 +23,22 @@ fn main() -> Result<()> {
     let args = Args::parse();
     std::fs::create_dir_all(&args.output_dir)?;
 
-    // Registry: one line per service.
-    let docs = [
-        (
-            "radarr-v3",
-            render_service::<radarr_v3::RadarrV3>("Radarr v3"),
-        ),
-        (
-            "sonarr-v3",
-            render_service::<sonarr_v3::SonarrV3>("Sonarr v3"),
-        ),
-    ];
+    // Registry: rendered from the shared service table. Each row is gated by
+    // `#[cfg(feature = <tag>)]`, so a single-service build documents only that
+    // service. Adding a service is one row in `service_registry::service_registry`.
+    macro_rules! gen_docs {
+        ($($v:ident => $tag:literal : $ty:path = $title:literal),+ $(,)?) => {{
+            // Pushes are `#[cfg]`-gated per service, so this can't be a `vec![]`.
+            let mut docs: Vec<(&'static str, String)> = Vec::new();
+            $(
+                #[cfg(feature = $tag)]
+                docs.push(($tag, render_service::<$ty>($title)));
+            )+
+            docs
+        }};
+    }
+    #[allow(clippy::vec_init_then_push)]
+    let docs = service_registry::service_registry!(gen_docs);
 
     for (slug, content) in docs {
         let path = args.output_dir.join(format!("{slug}-config.md"));

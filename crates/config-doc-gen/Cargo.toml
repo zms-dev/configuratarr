@@ -8,8 +8,14 @@ name = "config-doc-gen"
 path = "src/main.rs"
 
 [dependencies]
-core-lib    = { path = "../core" }
-radarr-v3   = { path = "../radarr-v3" }
-sonarr-v3   = { path = "../sonarr-v3" }
+core-lib         = { path = "../core" }
+service-registry = { path = "../service-registry" }
+radarr-v3   = { path = "../radarr-v3", optional = true }
+sonarr-v3   = { path = "../sonarr-v3", optional = true }
 anyhow      = { workspace = true }
 clap        = { workspace = true }
+
+[features]
+default   = ["radarr-v3", "sonarr-v3"]
+radarr-v3 = ["dep:radarr-v3"]
+sonarr-v3 = ["dep:sonarr-v3"]
