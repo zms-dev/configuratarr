@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 core-lib  = { path = "../core" }
 radarr-v3 = { path = "../radarr-v3" }
+sonarr-v3 = { path = "../sonarr-v3" }
 anyhow.workspace       = true
 serde_json.workspace   = true
 serde-saphyr.workspace = true

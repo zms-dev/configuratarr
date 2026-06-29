@@ -30,6 +30,7 @@ use serde_json::Value;
 
 pub use core_lib::apply::ApplyOptions as Options;
 pub use radarr_v3::RadarrV3;
+pub use sonarr_v3::SonarrV3;
 
 /// One configured service instance. Variants mirror the `type:` tags. **Adding a
 /// new service crate adds a variant here** — the single registry edit.
@@ -37,7 +38,8 @@ pub use radarr_v3::RadarrV3;
 /// Holds the *connection-only* typed service (resources stay empty — apply is
 /// value-driven). The desired resource state lives in [`Instance::config`].
 pub enum ServiceInstance {
-    RadarrV3(RadarrV3),
+    RadarrV3(Box<RadarrV3>),
+    SonarrV3(Box<SonarrV3>),
 }
 
 impl ServiceInstance {
@@ -48,7 +50,12 @@ impl ServiceInstance {
             .and_then(Value::as_str)
             .ok_or_else(|| anyhow::anyhow!("service entry missing `type`"))?;
         Ok(match ty {
-            "radarr-v3" => Self::RadarrV3(engine::decode_service_config::<RadarrV3>(value)?),
+            "radarr-v3" => {
+                Self::RadarrV3(Box::new(engine::decode_service_config::<RadarrV3>(value)?))
+            }
+            "sonarr-v3" => {
+                Self::SonarrV3(Box::new(engine::decode_service_config::<SonarrV3>(value)?))
+            }
             other => anyhow::bail!("unknown service type `{other}`"),
         })
     }
@@ -57,6 +64,7 @@ impl ServiceInstance {
     pub fn type_name(&self) -> &'static str {
         match self {
             Self::RadarrV3(_) => "radarr-v3",
+            Self::SonarrV3(_) => "sonarr-v3",
         }
     }
 
@@ -64,7 +72,8 @@ impl ServiceInstance {
     /// state (the raw entry `Value`).
     pub async fn apply(&self, config: &Value, opts: ApplyOptions) -> Result<Report> {
         match self {
-            Self::RadarrV3(s) => apply(s, config, opts).await,
+            Self::RadarrV3(s) => apply(s.as_ref(), config, opts).await,
+            Self::SonarrV3(s) => apply(s.as_ref(), config, opts).await,
         }
     }
 
@@ -72,7 +81,8 @@ impl ServiceInstance {
     /// desired state (the raw entry `Value`).
     pub async fn plan(&self, config: &Value, opts: ApplyOptions) -> Result<Plan> {
         match self {
-            Self::RadarrV3(s) => plan(s, config, opts).await,
+            Self::RadarrV3(s) => plan(s.as_ref(), config, opts).await,
+            Self::SonarrV3(s) => plan(s.as_ref(), config, opts).await,
         }
     }
 
@@ -80,6 +90,7 @@ impl ServiceInstance {
     pub fn health_check(&self) -> Option<&'static str> {
         match self {
             Self::RadarrV3(_) => <RadarrV3 as Service>::descriptor().health_check,
+            Self::SonarrV3(_) => <SonarrV3 as Service>::descriptor().health_check,
         }
     }
 
@@ -87,7 +98,8 @@ impl ServiceInstance {
     /// declares no health endpoint.
     pub async fn wait_healthy(&self, timeout: Duration) -> Result<()> {
         match self {
-            Self::RadarrV3(s) => wait_healthy(s, timeout).await,
+            Self::RadarrV3(s) => wait_healthy(s.as_ref(), timeout).await,
+            Self::SonarrV3(s) => wait_healthy(s.as_ref(), timeout).await,
         }
     }
 }

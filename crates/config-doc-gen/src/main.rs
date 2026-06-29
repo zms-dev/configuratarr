@@ -24,10 +24,16 @@ fn main() -> Result<()> {
     std::fs::create_dir_all(&args.output_dir)?;
 
     // Registry: one line per service.
-    let docs = [(
-        "radarr-v3",
-        render_service::<radarr_v3::RadarrV3>("Radarr v3"),
-    )];
+    let docs = [
+        (
+            "radarr-v3",
+            render_service::<radarr_v3::RadarrV3>("Radarr v3"),
+        ),
+        (
+            "sonarr-v3",
+            render_service::<sonarr_v3::SonarrV3>("Sonarr v3"),
+        ),
+    ];
 
     for (slug, content) in docs {
         let path = args.output_dir.join(format!("{slug}-config.md"));

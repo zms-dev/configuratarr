@@ -27,6 +27,7 @@ in
       after = [
         "network.target"
         "radarr.service"
+        "sonarr.service"
       ];
 
       serviceConfig = {

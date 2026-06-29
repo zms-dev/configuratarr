@@ -10,5 +10,6 @@ path = "src/main.rs"
 [dependencies]
 core-lib    = { path = "../core" }
 radarr-v3   = { path = "../radarr-v3" }
+sonarr-v3   = { path = "../sonarr-v3" }
 anyhow      = { workspace = true }
 clap        = { workspace = true }

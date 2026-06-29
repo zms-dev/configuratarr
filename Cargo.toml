@@ -24,6 +24,7 @@ members = [
     "crates/core-testkit",
     "crates/core-http",
     "crates/radarr-v3",
+    "crates/sonarr-v3",
     "crates/core-config",
     "crates/core-cli",
     "crates/cmd-doc-gen",

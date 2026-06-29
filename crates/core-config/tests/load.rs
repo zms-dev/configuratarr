@@ -26,7 +26,9 @@ fn loads_a_radarr_instance() {
     let inst = cfg.get("home-radarr").expect("instance present");
     assert_eq!(inst.service.type_name(), "radarr-v3");
 
-    let ServiceInstance::RadarrV3(r) = &inst.service;
+    let ServiceInstance::RadarrV3(r) = &inst.service else {
+        panic!("expected radarr-v3 instance");
+    };
     // connection scalars decode into the typed service
     assert_eq!(r.url, "http://localhost:7878");
     assert_eq!(r.api_key.expose(), "secret123");
@@ -54,7 +56,9 @@ home-radarr:
 ";
     let cfg = load_str(yaml).unwrap();
     let inst = cfg.get("home-radarr").unwrap();
-    let ServiceInstance::RadarrV3(r) = &inst.service;
+    let ServiceInstance::RadarrV3(r) = &inst.service else {
+        panic!("expected radarr-v3 instance");
+    };
     assert_eq!(r.api_key.expose(), "from-env-123");
 }
 
