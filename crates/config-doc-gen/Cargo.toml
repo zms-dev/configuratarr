@@ -1,0 +1,14 @@
+[package]
+name    = "config-doc-gen"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "config-doc-gen"
+path = "src/main.rs"
+
+[dependencies]
+core-lib    = { path = "../core" }
+radarr-v3   = { path = "../radarr-v3" }
+anyhow      = { workspace = true }
+clap        = { workspace = true }

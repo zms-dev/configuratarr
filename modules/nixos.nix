@@ -5,8 +5,6 @@
   ...
 }:
 
-with lib;
-
 let
   cfg = config.services.configuratarr;
   yamlFormat = pkgs.formats.yaml { };
@@ -18,29 +16,31 @@ in
     enableDescription = "Configuratarr declarative configuration service";
   };
 
-  config = mkIf cfg.enable {
+  config = lib.mkIf cfg.enable {
     systemd.services.configuratarr = {
       description = "Configuratarr Stack Configuration Sync";
       wantedBy = [ "multi-user.target" ];
+      # Order after the apps we actually support, so they're up to receive
+      # config. (Ordering only — a unit that isn't on this host is ignored, and
+      # remote apps configured by URL have no local unit anyway.) Add a line here
+      # as each new service crate lands.
       after = [
         "network.target"
         "radarr.service"
-        "sonarr.service"
-        "prowlarr.service"
-        "lidarr.service"
-        "readarr.service"
       ];
 
       serviceConfig = {
         Type = "oneshot";
-        ExecStart = ''
-          ${cfg.package}/bin/configuratarr sync \
-            --config ${configFile} \
-            ${lib.optionalString cfg.prune "--prune"} \
-            ${lib.optionalString cfg.wait "--wait"} \
-            --wait-timeout ${toString cfg.waitTimeout} \
-            --apply --auto-approve
-        '';
+        ExecStart = lib.concatStringsSep " " (
+          [
+            "${cfg.package}/bin/configuratarr"
+            "--config ${configFile}"
+            "apply"
+            # Non-interactive: systemd has no TTY for the confirmation prompt.
+            "--auto-approve"
+          ]
+          ++ lib.optional cfg.prune "--prune"
+        );
         RemainAfterExit = true;
       };
     };

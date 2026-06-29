@@ -1,0 +1,885 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "autobrr",
+    "version": "v1",
+    "description": "autobrr API"
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:7474/api"
+    }
+  ],
+  "security": [
+    { "ApiKeyHeader": [] }
+  ],
+  "components": {
+    "securitySchemes": {
+      "ApiKeyHeader": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Token"
+      },
+      "ApiKeyQuery": {
+        "type": "apiKey",
+        "in": "query",
+        "name": "apikey"
+      }
+    },
+    "schemas": {
+      "FilterIndexer": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "name": { "type": "string" },
+          "identifier": { "type": "string" }
+        }
+      },
+      "Action": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "name": { "type": "string" },
+          "type": {
+            "type": "string",
+            "enum": [
+              "QBITTORRENT",
+              "DELUGE_V1",
+              "DELUGE_V2",
+              "RTORRENT",
+              "TRANSMISSION",
+              "SONARR",
+              "RADARR",
+              "LIDARR",
+              "WHISPARR",
+              "READARR",
+              "PORLA",
+              "WATCH_FOLDER",
+              "WEBHOOK",
+              "TEST"
+            ]
+          },
+          "enabled": { "type": "boolean" },
+          "category": { "type": "string" },
+          "tags": { "type": "string" },
+          "save_path": { "type": "string" },
+          "reannounce_interval": { "type": "integer" },
+          "reannounce_max_attempts": { "type": "integer" },
+          "client_id": { "type": "integer" },
+          "webhook_host": { "type": "string" },
+          "webhook_method": { "type": "string" },
+          "webhook_type": { "type": "string" },
+          "webhook_data": { "type": "string" },
+          "webhook_headers": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "exec_cmd": { "type": "string" },
+          "exec_args": { "type": "string" },
+          "watch_folder": { "type": "string" }
+        }
+      },
+      "ExternalFilter": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "name": { "type": "string" },
+          "index": { "type": "integer" },
+          "type": {
+            "type": "string",
+            "enum": ["WEBHOOK", "EXEC"]
+          },
+          "enabled": { "type": "boolean" },
+          "webhook_host": { "type": "string" },
+          "webhook_method": { "type": "string" },
+          "webhook_data": { "type": "string" },
+          "webhook_expect_status": { "type": "integer" },
+          "exec_cmd": { "type": "string" },
+          "exec_args": { "type": "string" },
+          "exec_expect_status": { "type": "integer" }
+        }
+      },
+      "Filter": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "name": { "type": "string" },
+          "enabled": { "type": "boolean" },
+          "priority": { "type": "integer" },
+          "use_regex": { "type": "boolean" },
+          "years": { "type": "string" },
+          "seasons": { "type": "string" },
+          "episodes": { "type": "string" },
+          "match_releases": { "type": "string" },
+          "except_releases": { "type": "string" },
+          "match_release_groups": { "type": "string" },
+          "except_release_groups": { "type": "string" },
+          "match_categories": { "type": "string" },
+          "except_categories": { "type": "string" },
+          "tags": { "type": "string" },
+          "except_tags": { "type": "string" },
+          "tags_match_logic": { "type": "string" },
+          "except_tags_match_logic": { "type": "string" },
+          "smart_episode": { "type": "boolean" },
+          "resolutions": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "codecs": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "sources": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "containers": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "match_hdr": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "except_hdr": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "match_other": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "except_other": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "match_language": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "except_language": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "formats": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "quality": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "media": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "match_release_types": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "origins": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "except_origins": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "min_size": { "type": "string" },
+          "max_size": { "type": "string" },
+          "delay": { "type": "integer" },
+          "indexers": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/FilterIndexer" }
+          },
+          "actions": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Action" }
+          },
+          "external": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ExternalFilter" }
+          }
+        }
+      },
+      "FilterCreate": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string" },
+          "enabled": { "type": "boolean" },
+          "resolutions": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "codecs": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "sources": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "containers": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "origins": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      },
+      "EnabledBody": {
+        "type": "object",
+        "required": ["enabled"],
+        "properties": {
+          "enabled": { "type": "boolean" }
+        }
+      },
+      "Indexer": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "name": { "type": "string" },
+          "identifier": { "type": "string" },
+          "enabled": { "type": "boolean" },
+          "type": { "type": "string" }
+        }
+      },
+      "IrcNetwork": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "name": { "type": "string" },
+          "server": { "type": "string" },
+          "port": { "type": "integer" },
+          "tls": { "type": "boolean" },
+          "enabled": { "type": "boolean" },
+          "healthy": { "type": "boolean" },
+          "connected": { "type": "boolean" }
+        }
+      },
+      "Feed": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "name": { "type": "string" },
+          "type": { "type": "string" },
+          "enabled": { "type": "boolean" },
+          "url": { "type": "string" },
+          "interval": { "type": "integer" },
+          "indexer_id": { "type": "integer" }
+        }
+      },
+      "DownloadClientBasic": {
+        "type": "object",
+        "properties": {
+          "auth": { "type": "boolean" },
+          "username": { "type": "string" },
+          "password": { "type": "string" }
+        }
+      },
+      "DownloadClientRules": {
+        "type": "object",
+        "properties": {
+          "enabled": { "type": "boolean" },
+          "max_active_downloads": { "type": "integer" },
+          "ignore_slow_torrents": { "type": "boolean" },
+          "ignore_slow_torrents_condition": { "type": "string" },
+          "download_speed_threshold": { "type": "integer" },
+          "upload_speed_threshold": { "type": "integer" }
+        }
+      },
+      "DownloadClientSettings": {
+        "type": "object",
+        "properties": {
+          "apikey": { "type": "string" },
+          "basic": { "$ref": "#/components/schemas/DownloadClientBasic" },
+          "rules": { "$ref": "#/components/schemas/DownloadClientRules" },
+          "external_download_client_id": { "type": "integer" }
+        }
+      },
+      "DownloadClient": {
+        "type": "object",
+        "required": ["name", "type", "enabled", "host"],
+        "properties": {
+          "id": { "type": "integer" },
+          "name": { "type": "string" },
+          "type": {
+            "type": "string",
+            "enum": [
+              "QBITTORRENT",
+              "DELUGE_V1",
+              "DELUGE_V2",
+              "RTORRENT",
+              "TRANSMISSION",
+              "SONARR",
+              "RADARR",
+              "LIDARR",
+              "WHISPARR",
+              "READARR",
+              "PORLA",
+              "WATCH_FOLDER"
+            ]
+          },
+          "enabled": { "type": "boolean" },
+          "host": { "type": "string" },
+          "port": { "type": "integer" },
+          "tls": { "type": "boolean" },
+          "tls_skip_verify": { "type": "boolean" },
+          "username": { "type": "string" },
+          "password": { "type": "string" },
+          "settings": { "$ref": "#/components/schemas/DownloadClientSettings" }
+        }
+      },
+      "NotificationEvent": {
+        "type": "string",
+        "enum": [
+          "PUSH_APPROVED",
+          "PUSH_REJECTED",
+          "PUSH_ERROR",
+          "IRC_DISCONNECTED",
+          "IRC_RECONNECTED",
+          "APP_UPDATE_AVAILABLE"
+        ]
+      },
+      "Notification": {
+        "type": "object",
+        "required": ["name", "type", "enabled", "events"],
+        "properties": {
+          "id": { "type": "integer" },
+          "name": { "type": "string" },
+          "type": {
+            "type": "string",
+            "enum": ["NOTIFIARR", "DISCORD", "TELEGRAM", "GOTIFY", "PUSHOVER", "SLACK", "NTFY", "SHOUTRRR"]
+          },
+          "enabled": { "type": "boolean" },
+          "events": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/NotificationEvent" }
+          },
+          "webhook": { "type": "string" },
+          "api_key": { "type": "string" },
+          "token": { "type": "string" },
+          "channel": { "type": "string" },
+          "topic": { "type": "string" },
+          "host": { "type": "string" }
+        }
+      },
+      "ApiKey": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "key": { "type": "string" },
+          "scopes": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ApiKeyCreate": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string" },
+          "scopes": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      },
+      "Config": {
+        "type": "object",
+        "properties": {
+          "host": { "type": "string" },
+          "port": { "type": "integer" },
+          "log_level": { "type": "string" },
+          "log_path": { "type": "string" },
+          "check_for_updates": { "type": "boolean" },
+          "version": { "type": "string" },
+          "database": { "type": "string" }
+        }
+      },
+      "ConfigUpdate": {
+        "type": "object",
+        "properties": {
+          "log_level": { "type": "string" },
+          "check_for_updates": { "type": "boolean" }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/healthz/liveness": {
+      "get": {
+        "operationId": "get_healthz_liveness",
+        "summary": "Liveness check",
+        "responses": {
+          "200": { "description": "Application is running" }
+        }
+      }
+    },
+    "/healthz/readiness": {
+      "get": {
+        "operationId": "get_healthz_readiness",
+        "summary": "Readiness check",
+        "responses": {
+          "200": { "description": "Application and dependencies are ready" },
+          "500": { "description": "One or more dependencies are unavailable" }
+        }
+      }
+    },
+    "/filters": {
+      "get": {
+        "operationId": "get_filters",
+        "summary": "List all filters",
+        "responses": {
+          "200": {
+            "description": "List of filters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/Filter" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "create_filter",
+        "summary": "Create a filter",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/FilterCreate" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Created filter",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Filter" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/filters/{filterId}": {
+      "patch": {
+        "operationId": "update_filter",
+        "summary": "Update a filter",
+        "parameters": [
+          {
+            "name": "filterId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/Filter" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated filter",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Filter" }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_filter",
+        "summary": "Delete a filter",
+        "parameters": [
+          {
+            "name": "filterId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer" }
+          }
+        ],
+        "responses": {
+          "204": { "description": "Filter deleted" }
+        }
+      }
+    },
+    "/filters/{filterId}/enabled": {
+      "put": {
+        "operationId": "toggle_filter_enabled",
+        "summary": "Enable or disable a filter",
+        "parameters": [
+          {
+            "name": "filterId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/EnabledBody" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Filter status updated" }
+        }
+      }
+    },
+    "/indexer": {
+      "get": {
+        "operationId": "get_indexers",
+        "summary": "List all indexers",
+        "responses": {
+          "200": {
+            "description": "List of indexers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/Indexer" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/indexer/{indexerId}/enabled": {
+      "patch": {
+        "operationId": "toggle_indexer_enabled",
+        "summary": "Enable or disable an indexer",
+        "parameters": [
+          {
+            "name": "indexerId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/EnabledBody" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Indexer status updated" }
+        }
+      }
+    },
+    "/irc": {
+      "get": {
+        "operationId": "get_irc_networks",
+        "summary": "List all IRC networks",
+        "responses": {
+          "200": {
+            "description": "List of IRC networks",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/IrcNetwork" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/irc/network/{networkId}/restart": {
+      "get": {
+        "operationId": "restart_irc_network",
+        "summary": "Restart an IRC network",
+        "parameters": [
+          {
+            "name": "networkId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Network restarted" }
+        }
+      }
+    },
+    "/feeds": {
+      "get": {
+        "operationId": "get_feeds",
+        "summary": "List all feeds",
+        "responses": {
+          "200": {
+            "description": "List of feeds",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/Feed" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/feeds/{feedId}/enabled": {
+      "patch": {
+        "operationId": "toggle_feed_enabled",
+        "summary": "Enable or disable a feed",
+        "parameters": [
+          {
+            "name": "feedId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/EnabledBody" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Feed status updated" }
+        }
+      }
+    },
+    "/feeds/{feedId}/cache": {
+      "delete": {
+        "operationId": "delete_feed_cache",
+        "summary": "Clear feed cache",
+        "parameters": [
+          {
+            "name": "feedId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer" }
+          }
+        ],
+        "responses": {
+          "204": { "description": "Cache cleared" }
+        }
+      }
+    },
+    "/download_clients": {
+      "get": {
+        "operationId": "get_download_clients",
+        "summary": "List all download clients",
+        "responses": {
+          "200": {
+            "description": "List of download clients",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/DownloadClient" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "create_download_client",
+        "summary": "Add a new download client",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/DownloadClient" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Created download client",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/DownloadClient" }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "update_download_client",
+        "summary": "Update an existing download client",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/DownloadClient" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated download client",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/DownloadClient" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/notification": {
+      "get": {
+        "operationId": "get_notifications",
+        "summary": "List all notification agents",
+        "responses": {
+          "200": {
+            "description": "List of notification agents",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/Notification" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "create_notification",
+        "summary": "Create a notification agent",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/Notification" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Created notification agent",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Notification" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/keys": {
+      "get": {
+        "operationId": "get_api_keys",
+        "summary": "List all API keys",
+        "responses": {
+          "200": {
+            "description": "List of API keys",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/ApiKey" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "create_api_key",
+        "summary": "Generate a new API key",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ApiKeyCreate" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Created API key",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiKey" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/release": {
+      "delete": {
+        "operationId": "delete_release_history",
+        "summary": "Clear release history older than N hours",
+        "parameters": [
+          {
+            "name": "olderThan",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "integer" }
+          }
+        ],
+        "responses": {
+          "204": { "description": "Release history cleared" }
+        }
+      }
+    },
+    "/config": {
+      "get": {
+        "operationId": "get_config",
+        "summary": "Read configuration",
+        "responses": {
+          "200": {
+            "description": "Current configuration",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Config" }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "update_config",
+        "summary": "Update configuration",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ConfigUpdate" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Configuration updated" }
+        }
+      }
+    }
+  }
+}

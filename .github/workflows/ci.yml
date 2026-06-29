@@ -13,21 +13,27 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
 
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@v22
+        with:
+          extra-conf: |
+            system-features = nixos-test kvm
 
       - name: Setup Cachix
         uses: cachix/cachix-action@v17
         with:
           name: configuratarr
           authToken: "${{ secrets.CACHIX_AUTH_TOKEN }}"
-          # Only push built binaries on main or dev branches, skip for Dependabot
           skipPush: ${{ github.actor == 'dependabot[bot]' }}
-
-      - name: Setup Rust Cache
-        uses: Swatinem/rust-cache@v2
 
       - name: Check Nix Flake schema & outputs
         run: nix flake check
@@ -41,12 +47,3 @@ jobs:
         run: |
           nix run .#generate-docs
           git diff --exit-code docs/
-
-      - name: Verify Cargo Formatting
-        run: nix develop --command cargo fmt --check
-
-      - name: Verify Rust Lints (Clippy)
-        run: nix develop --command cargo clippy --all-targets -- -D warnings
-
-      - name: Run Tests
-        run: nix develop --command cargo test
