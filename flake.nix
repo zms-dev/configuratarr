@@ -102,17 +102,16 @@
           # (`cargo nextest`, whole workspace, `#[ignore]`d e2e skipped — those run
           # in each service's `-e2e` VM check). Per-service checks add the VM e2e.
           # Add new services: // mkServiceChecks "sonarr-v3" (import ./nix/e2e/sonarr-v3.nix { inherit pkgs; })
-          checks =
-            {
-              workspace-tests = craneLib.cargoNextest (
-                commonArgs
-                // {
-                  inherit cargoArtifacts;
-                  cargoNextestExtraArgs = "--workspace";
-                }
-              );
-            }
-            // mkServiceChecks "radarr-v3" (import ./nix/e2e/radarr-v3.nix { inherit pkgs; });
+          checks = {
+            workspace-tests = craneLib.cargoNextest (
+              commonArgs
+              // {
+                inherit cargoArtifacts;
+                cargoNextestExtraArgs = "--workspace";
+              }
+            );
+          }
+          // mkServiceChecks "radarr-v3" (import ./nix/e2e/radarr-v3.nix { inherit pkgs; });
 
           formatter = pkgs.nixfmt-tree;
 
