@@ -18,7 +18,7 @@ Reach for the skill rather than re-deriving — they hold the exact procedures a
 
 ## Standards (non-negotiable)
 
-- **`crates/radarr-v3/` is the canonical template.** Every decision in it was deliberate. Mirror it exactly when adding a service or resource — same macros, same provider layout, same test shape. Do not invent alternatives.
+- **`crates/radarr-v3/` is the canonical template — for the *arr family.** Every decision in it was deliberate. When adding a service or resource to an *arr crate (radarr, sonarr, lidarr, prowlarr, whisparr, readarr), mirror it exactly — same macros, same provider layout, same test shape; do not invent alternatives. **Non-*arr services (jellyfin, overseerr, autobrr, bazarr) are different**: they diverge on auth, paths, and resource shape and may have no provider/fields-blob concept — radarr's *mechanics* (descriptor macros, harness, registration, nix) still apply, but its *shapes* may not. Before modeling a non-*arr service, or whenever unsure radarr's shape fits, **load the `core-architecture` skill and study `crates/core` first** — the engine (the four axes: endpoints/codec/sync/auth) is the source of truth for what's possible, not radarr.
 - **No shared structs across API crates.** APIs diverge subtly; duplication is intentional. The *mechanics* are shared (`core`, `core-testkit`), the resource structs are not.
 - **All deps via `[workspace.dependencies]`** in the root `Cargo.toml`, referenced with `.workspace = true`. Never pin a version in a crate manifest.
 - **Async is intentional** (`reqwest` + `tokio` are first-class). Do not replace with sync.

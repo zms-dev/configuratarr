@@ -8,81 +8,23 @@ Usage:
 Output includes:
   - All properties with types, nullability, readOnly, defaults, enum values
   - $ref children resolved one level (shows actual field types)
+  - allOf merged in; oneOf/anyOf flagged (fields may be incomplete)
   - Which paths/methods reference this schema and in what role
+  - Classification (CRUD / singleton / provider / embedded)
 """
-import json
 import sys
 
-
-def load_spec(path: str) -> dict:
-    with open(path) as f:
-        return json.load(f)
-
-
-def resolve_ref(ref: str, spec: dict) -> dict:
-    """Resolve a $ref to its schema dict."""
-    parts = ref.lstrip("#/").split("/")
-    node = spec
-    for p in parts:
-        node = node[p]
-    return node
-
-
-def describe_type(prop: dict, spec: dict) -> str:
-    if "$ref" in prop:
-        ref = prop["$ref"]
-        name = ref.split("/")[-1]
-        resolved = resolve_ref(ref, spec)
-        if "enum" in resolved:
-            vals = resolved["enum"]
-            return f"{name} (enum: {vals})"
-        return name
-    t = prop.get("type", "")
-    if t == "array":
-        items = prop.get("items", {})
-        if "$ref" in items:
-            inner = items["$ref"].split("/")[-1]
-            return f"array<{inner}>"
-        inner_t = items.get("type", "?")
-        return f"array<{inner_t}>"
-    if t == "number":
-        fmt = prop.get("format", "")
-        return f"number({fmt})" if fmt else "number"
-    return t or "?"
-
-
-def find_path_usages(schema_ref: str, spec: dict) -> list[tuple[str, str, str]]:
-    """Returns list of (path, method, role) where role is 'request'|'response'."""
-    usages = []
-    for path, path_item in spec.get("paths", {}).items():
-        for method, op in path_item.items():
-            if not isinstance(op, dict):
-                continue
-            m = method.upper()
-            found_role = None
-            rb = op.get("requestBody", {})
-            for ct in rb.get("content", {}).values():
-                s = ct.get("schema", {})
-                refs = []
-                if "$ref" in s:
-                    refs.append(s["$ref"])
-                if "items" in s and "$ref" in s.get("items", {}):
-                    refs.append(s["items"]["$ref"])
-                if schema_ref in refs:
-                    found_role = "request body"
-            for status, resp in op.get("responses", {}).items():
-                for ct in resp.get("content", {}).values():
-                    s = ct.get("schema", {})
-                    refs = []
-                    if "$ref" in s:
-                        refs.append(s["$ref"])
-                    if "items" in s and "$ref" in s.get("items", {}):
-                        refs.append(s["items"]["$ref"])
-                    if schema_ref in refs and found_role is None:
-                        found_role = f"response {status}"
-            if found_role:
-                usages.append((path, m, found_role))
-    return usages
+from common import (  # re-exported for tests
+    load_spec,
+    resolve_ref,
+    describe_type,
+    find_path_usages,
+    resolve_schema,
+    build_schema_path_index,
+    is_crud,
+    is_singleton,
+    is_provider,
+)
 
 
 def main():
@@ -104,14 +46,19 @@ def main():
     print(f"Schema: {schema_ref}")
     print()
 
-    # Enum shortcut
     if "enum" in schema:
         print(f"Type: enum ({schema.get('type', 'string')})")
         print(f"Values: {schema['enum']}")
         return
 
-    props = schema.get("properties", {})
-    required = set(schema.get("required", []))
+    merged, notes = resolve_schema(schema, spec)
+    props = merged.get("properties", {})
+    required = set(merged.get("required", []))
+
+    for note in notes:
+        print(f"  ⚠ {note}")
+    if notes:
+        print()
 
     if props:
         print("Properties:")
@@ -142,23 +89,20 @@ def main():
     else:
         print("Used in paths: (none — may be embedded only)")
 
-    # Classify — check sibling path methods for DELETE (no response body to ref)
-    methods_used = {m for _, m, _ in usages}
-    request_methods = {m for _, m, r in usages if "request" in r}
-    usage_paths = {p for p, _, _ in usages}
-    has_delete = any(
-        "delete" in spec.get("paths", {}).get(p, {})
-        for p in usage_paths
-    )
     print()
-    if "POST" in request_methods and "PUT" in methods_used and has_delete:
-        print("Classification: CRUD resource")
-    elif "PUT" in methods_used and "POST" not in request_methods:
-        print("Classification: singleton config (GET + PUT only)")
-    elif not request_methods:
-        print("Classification: read-only / embedded")
+    # Sync kind and provider-ness are orthogonal (a provider is still a CRUD
+    # resource) — report the sync classification, then note provider separately.
+    index = build_schema_path_index(spec)
+    if is_crud(schema_ref, index):
+        sync = "CRUD resource"
+    elif is_singleton(schema_ref, index):
+        sync = "singleton config (GET + PUT only)"
+    elif schema_ref not in index:
+        sync = "read-only / embedded"
     else:
-        print(f"Classification: mixed (methods: {sorted(methods_used)})")
+        sync = "mixed"
+    provider_note = " + provider (dynamic fields[] blob)" if is_provider(schema) else ""
+    print(f"Classification: {sync}{provider_note}")
 
 
 if __name__ == "__main__":

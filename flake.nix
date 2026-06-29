@@ -46,8 +46,6 @@
             "list_paths"
             "get_path"
             "compare_schemas"
-            "diff_resource"
-            "gen_resource_model"
           ];
 
           inherit
