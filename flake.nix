@@ -110,6 +110,16 @@
                 cargoNextestExtraArgs = "--workspace";
               }
             );
+
+            clippy = craneLib.cargoClippy (
+              commonArgs
+              // {
+                inherit cargoArtifacts;
+                cargoClippyExtraArgs = "--workspace --all-targets -- -D warnings";
+              }
+            );
+
+            rustfmt = craneLib.cargoFmt { inherit (commonArgs) src; };
           }
           // mkServiceChecks "radarr-v3" (import ./nix/e2e/radarr-v3.nix { inherit pkgs; });
 
