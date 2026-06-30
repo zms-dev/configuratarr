@@ -2,7 +2,6 @@
 
 // --- provider scaffolding (shared machinery) ---
 pub mod download_protocol;
-pub mod field;
 pub mod provider;
 pub mod provider_message;
 pub mod raw_provider;

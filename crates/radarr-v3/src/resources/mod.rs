@@ -6,7 +6,6 @@ pub mod download_client;
 pub mod download_client_config;
 pub mod download_clients;
 pub mod download_protocol;
-pub mod field;
 pub mod import_list;
 pub mod import_list_config;
 pub mod import_list_exclusion;

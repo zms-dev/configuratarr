@@ -28,6 +28,7 @@ macro_rules! service_registry {
         $cb! {
             RadarrV3 => "radarr-v3" : radarr_v3::RadarrV3 = "Radarr v3",
             SonarrV3 => "sonarr-v3" : sonarr_v3::SonarrV3 = "Sonarr v3",
+            ProwlarrV1 => "prowlarr-v1" : prowlarr_v1::ProwlarrV1 = "Prowlarr v1",
         }
     };
 }

@@ -365,6 +365,11 @@ fn emit_struct_fields(
         } else {
             quote!(false)
         };
+        let fields_map_tok = if attrs.fields_map {
+            quote!(true)
+        } else {
+            quote!(false)
+        };
         let reference_tok: TokenStream = match &attrs.reference {
             Some(t) => quote!(Some(#t)),
             None => quote!(None),
@@ -395,6 +400,7 @@ fn emit_struct_fields(
                 default: #default_tok,
                 secret: #secret_tok,
                 flatten: #flatten_tok,
+                fields_map: #fields_map_tok,
                 reference: #reference_tok,
                 nested_docs: #nested_docs_tok,
                 get: |t| { #get_tok },
@@ -437,6 +443,7 @@ pub(crate) fn strip_helper_attrs(mut input: DeriveInput) -> DeriveInput {
                             || p.is_ident("key")
                             || p.is_ident("wire")
                             || p.is_ident("flatten")
+                            || p.is_ident("fields_map")
                             || p.is_ident("default")
                             || p.is_ident("reference"))
                     });

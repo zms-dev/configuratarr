@@ -28,6 +28,7 @@ in
         "network.target"
         "radarr.service"
         "sonarr.service"
+        "prowlarr.service"
       ];
 
       serviceConfig = {

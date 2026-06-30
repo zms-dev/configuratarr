@@ -23,7 +23,7 @@ Consequences: no `Interpolated<T>` wrapper, no `CollectRefs`/`Referenceable`/`Se
 ```
 descriptor.rs   ResourceDescriptor, Endpoint(s), HttpMethod, SyncKind, CodecMeta, DefaultLit,
                 FieldDescriptor (name/doc/role/kind/wire_name/read_only/default/secret/flatten/
-                reference/nested_docs/get/set), VariantDescriptor
+                fields_map/reference/nested_docs/get/set), VariantDescriptor
 described.rs     Described trait (descriptor/empty/encode_variant/decode_variant/...);
                  ResourceErased + ErasedField (the type-erased walk used by nested recursion + doc-gen)
 field.rs         FieldKind / FieldRef / FieldValue / FieldRole
@@ -52,7 +52,7 @@ Extension model: **select** (name an impl) → **register** (add an enum variant
 ## Codecs
 
 - **Standard** — snake→camelCase JSON object.
-- **FieldsBlob** — `{implementation, configContract, fields:[{name,value}]}`; each typed field → one entry.
+- **FieldsBlob** — `{implementation, configContract, fields:[{name,value}]}`; each typed field → one entry. For an **open** key set (no fixed struct — e.g. Prowlarr Cardigann indexers), a `#[fields_map]` `Json` field on a Standard struct (`RawProvider`) carries a `name: value` map that the standard wire codec splays to / collects from the same `fields:[{name,value}]` array.
 - **TaggedByImpl** — reads a discriminator key, delegates to the matching variant's codec.
 - **StringEnum** — unit enum ↔ bare wire string.
 - **Custom** — `value.custom_encode()` / `T::custom_decode()`.

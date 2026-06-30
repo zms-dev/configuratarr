@@ -18,7 +18,7 @@ Reads a desired-state YAML file, diffs it against each app's live REST API, and 
 | Radarr | v3 | `radarr-v3` | ✅ Supported |
 | Sonarr | v3 | `sonarr-v3` | ✅ Supported |
 | Lidarr | v1 | `lidarr-v1` | 🚧 Planned |
-| Prowlarr | v1 | `prowlarr-v1` | 🚧 Planned |
+| Prowlarr | v1 | `prowlarr-v1` | ✅ Supported |
 | Readarr | — | — | 🚧 Planned |
 
 More of the ecosystem (Jellyfin, Bazarr, Jellyseerr, …) is on the radar. The engine is service-agnostic — adding one is filling in a template, not changing the core. See [`docs/contributors.md`](docs/contributors.md).

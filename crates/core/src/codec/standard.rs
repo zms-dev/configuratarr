@@ -32,6 +32,20 @@ fn emit_field<T: 'static>(
     if f.read_only {
         return Ok(());
     }
+    // `#[fields_map]`: a `{name: value}` object rendered as the *arr
+    // `[{name, value}]` provider blob under this field's wire key.
+    if f.fields_map {
+        let arr = match &r {
+            FieldRef::Json(v) => fields_map_to_array(v),
+            FieldRef::OptJson(o) => match o.as_ref() {
+                Some(v) => fields_map_to_array(v),
+                None => return Ok(()),
+            },
+            _ => anyhow::bail!("#[fields_map] requires a Json field on `{}`", f.name),
+        };
+        map.insert(wire_key(f.name, f.wire_name), Value::Array(arr));
+        return Ok(());
+    }
     if f.flatten
         && let FieldRef::Nested(n) = &r
     {
@@ -107,6 +121,37 @@ pub(crate) fn field_to_json(r: &FieldRef<'_>) -> anyhow::Result<Option<Value>> {
     Ok(Some(v))
 }
 
+/// Splay a `{name: value}` object into the *arr `[{name, value}]` blob shape.
+/// A non-object (e.g. null) yields an empty array.
+fn fields_map_to_array(v: &Value) -> Vec<Value> {
+    match v.as_object() {
+        Some(obj) => obj
+            .iter()
+            .map(|(k, val)| {
+                let mut e = Map::new();
+                e.insert("name".to_string(), Value::String(k.clone()));
+                e.insert("value".to_string(), val.clone());
+                Value::Object(e)
+            })
+            .collect(),
+        None => Vec::new(),
+    }
+}
+
+/// Collect the *arr `[{name, value}]` blob back into a `{name: value}` object.
+/// Entries missing `name`/`value` are skipped.
+fn fields_array_to_map(arr: &[Value]) -> Value {
+    let mut obj = Map::new();
+    for item in arr {
+        if let (Some(name), Some(val)) =
+            (item.get("name").and_then(Value::as_str), item.get("value"))
+        {
+            obj.insert(name.to_string(), val.clone());
+        }
+    }
+    Value::Object(obj)
+}
+
 fn num_f64(x: f64) -> anyhow::Result<Value> {
     Number::from_f64(x)
         .map(Value::Number)
@@ -155,6 +200,18 @@ pub fn decode<T: Described>(value: &Value) -> anyhow::Result<T> {
         if f.flatten {
             let fv = crate::field::FieldValue::Nested(value.clone());
             (f.set)(&mut out, fv).map_err(|e| anyhow::anyhow!("field `{}`: {e}", f.name))?;
+            continue;
+        }
+        // `#[fields_map]`: collect the `[{name, value}]` blob into a map.
+        if f.fields_map {
+            let key = wire_key(f.name, f.wire_name);
+            let map = obj
+                .get(&key)
+                .and_then(Value::as_array)
+                .map(|arr| fields_array_to_map(arr))
+                .unwrap_or_else(|| Value::Object(Map::new()));
+            (f.set)(&mut out, crate::field::FieldValue::Json(map))
+                .map_err(|e| anyhow::anyhow!("field `{}`: {e}", f.name))?;
             continue;
         }
         let key = wire_key(f.name, f.wire_name);

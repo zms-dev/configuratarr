@@ -139,7 +139,10 @@ The static spec types `fields` as a generic `[{name, value}]` array — it tells
 | Present on read, never sent | `#[wire(read_only)]` |
 | Nested struct hoisted to parent keys | `#[flatten]` |
 | Non-zero default for an absent config key | `#[default(expr)]` |
+| Open `name: value` settings map ↔ *arr `fields:[{name,value}]` blob | `#[fields_map]` on a `Json` field |
 | Credential | field type `SecretValue` (no attribute — inferred) |
+
+`#[fields_map]` is for an **open / dynamically-keyed** provider blob whose settings can't be a fixed struct (e.g. Prowlarr indexers — Cardigann definitions vary per tracker). The user authors a plain YAML map (`fields: { baseUrl: ..., apiKey: ... }`); the standard wire codec splays it to `fields:[{name,value}]` on encode and collects it back on decode. `${env}`/`${ref}` resolve inside the values; the whole map redacts as `Complex` in plan output. Used by `raw_provider.rs` (`RawProvider`). For a **closed** variant set, use typed `#[fields_blob]` variants instead — only reach for `#[fields_map]` when the key set is genuinely open.
 
 Endpoints are **always explicit** (`verb("/path")`); paths may carry `${self.<field>}` (resolved against the live/merged value at apply, e.g. `/api/v3/tag/${self.id}`).
 
