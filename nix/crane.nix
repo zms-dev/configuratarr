@@ -30,7 +30,11 @@ let
   commonArgs = {
     inherit src;
     strictDeps = true;
-    nativeBuildInputs = [ pkgs.pkg-config ];
+    # cmake: aws-lc-sys (via reqwest's rustls → aws-lc-rs) builds its C sources with it.
+    nativeBuildInputs = [
+      pkgs.pkg-config
+      pkgs.cmake
+    ];
     buildInputs = [ pkgs.openssl ];
   };
 
