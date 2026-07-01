@@ -49,6 +49,13 @@ A saved custom filter for a Prowlarr UI page.
 
 Indexer definition — connects Prowlarr to a usenet or torrent search source.
 
+Create/update use `?forceSave=true`: Prowlarr otherwise runs a live
+connectivity test against the indexer on save and rejects (HTTP 400) when the
+site is unreachable *from the host running configuratarr* — but the tracker
+may only be reachable through Prowlarr's own proxy/FlareSolverr, or be
+transiently down. A declarative sync must converge to the desired config
+regardless; Prowlarr still surfaces the failing health check afterward.
+
 | Field | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `name` | string | yes |  | Provider instance name — the resource's natural key. |
