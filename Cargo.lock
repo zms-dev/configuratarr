@@ -244,7 +244,7 @@ checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 
 [[package]]
 name = "cmd-doc-gen"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "clap-markdown",
  "core-cli",
@@ -268,7 +268,7 @@ dependencies = [
 
 [[package]]
 name = "config-doc-gen"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -281,7 +281,7 @@ dependencies = [
 
 [[package]]
 name = "configuratarr"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -294,14 +294,14 @@ dependencies = [
 
 [[package]]
 name = "core-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "clap",
 ]
 
 [[package]]
 name = "core-config"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "core-lib",
@@ -331,7 +331,7 @@ checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
 
 [[package]]
 name = "core-http"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "reqwest",
@@ -344,7 +344,7 @@ dependencies = [
 
 [[package]]
 name = "core-lib"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "base64",
@@ -360,7 +360,7 @@ dependencies = [
 
 [[package]]
 name = "core-macros"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "darling",
  "proc-macro2",
@@ -370,7 +370,7 @@ dependencies = [
 
 [[package]]
 name = "core-testkit"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "core-lib",
@@ -1289,7 +1289,7 @@ dependencies = [
 
 [[package]]
 name = "prowlarr-v1"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "core-lib",
@@ -1318,7 +1318,7 @@ checksum = "69cdb34c158ceb288df11e18b4bd39de994f6657d83847bdffdbd7f346754b0f"
 
 [[package]]
 name = "radarr-v3"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "core-lib",
@@ -1671,7 +1671,7 @@ dependencies = [
 
 [[package]]
 name = "service-registry"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "sharded-slab"
@@ -1738,7 +1738,7 @@ dependencies = [
 
 [[package]]
 name = "sonarr-v3"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "core-lib",
