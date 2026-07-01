@@ -16,9 +16,9 @@ Reads a desired-state YAML file, diffs it against each app's live REST API, and 
 | App | API | Config `type` | Status |
 |-----|-----|---------------|--------|
 | Radarr | v3 | `radarr-v3` | ✅ Supported |
-| Sonarr | v3 | `sonarr-v3` | 🚧 Planned |
+| Sonarr | v3 | `sonarr-v3` | ✅ Supported |
 | Lidarr | v1 | `lidarr-v1` | 🚧 Planned |
-| Prowlarr | v1 | `prowlarr-v1` | 🚧 Planned |
+| Prowlarr | v1 | `prowlarr-v1` | ✅ Supported |
 | Readarr | — | — | 🚧 Planned |
 
 More of the ecosystem (Jellyfin, Bazarr, Jellyseerr, …) is on the radar. The engine is service-agnostic — adding one is filling in a template, not changing the core. See [`docs/contributors.md`](docs/contributors.md).
@@ -103,7 +103,7 @@ Any field can use a template expression, resolved at apply time:
 - `${file./path/to/secret}` — the contents of a file
 - `${ref.tag.managed}` — another resource, by name (configuratarr figures out the id and the right order)
 
-See [`docs/radarr-v3-config.md`](docs/radarr-v3-config.md) for every field of every resource.
+See [`docs/radarr-v3-config.md`](docs/radarr-v3-config.md) and [`docs/sonarr-v3-config.md`](docs/sonarr-v3-config.md) for every field of every resource.
 
 ---
 

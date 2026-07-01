@@ -444,6 +444,9 @@ pub struct FieldAttrs {
     pub wire_name: Option<String>,
     pub read_only: bool,
     pub flatten: bool,
+    /// `#[fields_map]` — a `Json` object field encoded as a `[{name, value}]`
+    /// array on the wire (the *arr provider fields blob).
+    pub fields_map: bool,
     /// Literal from `#[default(<lit>)]` — mapped to `core_lib::DefaultLit` at
     /// emit time.
     pub default: Option<syn::Lit>,
@@ -467,6 +470,10 @@ impl FieldAttrs {
             }
             if attr.path().is_ident("flatten") {
                 out.flatten = true;
+                continue;
+            }
+            if attr.path().is_ident("fields_map") {
+                out.fields_map = true;
                 continue;
             }
             if attr.path().is_ident("default") {

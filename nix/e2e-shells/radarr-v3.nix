@@ -43,7 +43,7 @@ pkgs.mkShell {
       export RADARR_API_KEY="$_RADARR_API_KEY"
       echo "  Radarr ready — $RADARR_URL"
       echo ""
-      echo "  cargo nextest run -p radarr-v3 --run-ignored all"
+      echo "  cargo nextest run -p radarr-v3 --run-ignored all -j1"
     else
       echo "  Radarr failed to start — check $_RADARR_DATA/radarr.log"
       kill "$_RADARR_PID" 2>/dev/null

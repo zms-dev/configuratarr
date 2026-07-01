@@ -53,4 +53,14 @@ in
     inherit pkgs;
     e2eShell = e2e;
   };
+
+  e2e-sonarr = import ./e2e-shells/sonarr-v3.nix {
+    inherit pkgs;
+    e2eShell = e2e;
+  };
+
+  e2e-prowlarr = import ./e2e-shells/prowlarr-v1.nix {
+    inherit pkgs;
+    e2eShell = e2e;
+  };
 }

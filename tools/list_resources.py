@@ -11,73 +11,22 @@ Flags:
   --crud        Only schemas that appear in POST+PUT+DELETE (full CRUD)
   --enums       Only enum schemas
   --no-enums    Exclude enum schemas (useful default for resource scanning)
+
+If the spec names few/no component schemas (some non-*arr specs inline their
+request/response bodies in paths), the inline bodies are listed too, tagged
+[inline] — inspect them with get_path.
 """
-import json
 import sys
-from pathlib import Path
 
-
-def load_spec(path: str) -> dict:
-    with open(path) as f:
-        return json.load(f)
-
-
-def is_enum(schema: dict) -> bool:
-    return "enum" in schema
-
-
-def is_provider(schema: dict) -> bool:
-    props = schema.get("properties", {})
-    return all(k in props for k in ("fields", "implementation", "configContract"))
-
-
-def build_schema_path_index(spec: dict) -> dict[str, set[str]]:
-    """Map schema ref -> set of HTTP methods used on paths where that schema appears.
-
-    Includes methods like DELETE that don't reference a schema body — if a schema
-    appears in GET/PUT on a path, DELETE on the same path is attributed to it too.
-    """
-    # Collect refs and all methods per path
-    path_data: dict[str, tuple[set[str], set[str]]] = {}
-    for path, path_item in spec.get("paths", {}).items():
-        refs: set[str] = set()
-        methods: set[str] = set()
-        for method, op in path_item.items():
-            if not isinstance(op, dict):
-                continue
-            methods.add(method.upper())
-            rb = op.get("requestBody", {})
-            for ct in rb.get("content", {}).values():
-                s = ct.get("schema", {})
-                if "$ref" in s:
-                    refs.add(s["$ref"])
-                elif "items" in s and "$ref" in s.get("items", {}):
-                    refs.add(s["items"]["$ref"])
-            for resp in op.get("responses", {}).values():
-                for ct in resp.get("content", {}).values():
-                    s = ct.get("schema", {})
-                    if "$ref" in s:
-                        refs.add(s["$ref"])
-                    elif "items" in s and "$ref" in s.get("items", {}):
-                        refs.add(s["items"]["$ref"])
-        path_data[path] = (refs, methods)
-
-    # Associate all path methods with schemas that appear anywhere on that path
-    index: dict[str, set[str]] = {}
-    for refs, methods in path_data.values():
-        for ref in refs:
-            index.setdefault(ref, set()).update(methods)
-    return index
-
-
-def is_singleton(ref: str, index: dict[str, set[str]]) -> bool:
-    methods = index.get(ref, set())
-    return "GET" in methods and "PUT" in methods and "POST" not in methods and "DELETE" not in methods
-
-
-def is_crud(ref: str, index: dict[str, set[str]]) -> bool:
-    methods = index.get(ref, set())
-    return "POST" in methods and "PUT" in methods and "DELETE" in methods
+from common import (  # re-exported for tests
+    load_spec,
+    is_enum,
+    is_provider,
+    is_singleton,
+    is_crud,
+    build_schema_path_index,
+    inline_path_schemas,
+)
 
 
 def main():
@@ -99,7 +48,6 @@ def main():
     want_enums     = "--enums"     in flags
     no_enums       = "--no-enums"  in flags
 
-    # If any positive filter active, start with nothing; else start with all
     active_filter = want_provider or want_singleton or want_crud or want_enums
 
     results = []
@@ -138,6 +86,16 @@ def main():
 
     for r in results:
         print(r)
+
+    # Inline (path-defined) bodies — only when no positive filter is active, so
+    # filtered runs stay focused on named component schemas.
+    if not active_filter:
+        inline = inline_path_schemas(spec)
+        if inline:
+            print()
+            print("Inline (path-defined) schemas — inspect with get_path:")
+            for label, _ in inline:
+                print(f"  {label}  [inline]")
 
 
 if __name__ == "__main__":

@@ -66,7 +66,7 @@ Bigger, but it's a template, not a research project. Copy `crates/radarr-v3/` to
 
 - Model each resource (most are nearly identical to radarr — tags, quality profiles, download clients, the config screens).
 - Tell the app's struct who it is: `#[service(name = "sonarr_v3", auth = api_key(header = "X-Api-Key"), …)]`.
-- Register it so users can pick it: a `type: sonarr-v3` entry in `core-config`, one line in `config-doc-gen` (which then auto-generates the config docs), and flip its row in the README's **Supported services** table to ✅.
+- Register it so users can pick it: add **one row** to the `service_registry!` table in `crates/service-registry/` (this drives both the `core-config` dispatch and the `config-doc-gen` config docs), mark the crate as an optional dep + feature in those two crates' `Cargo.toml`, and flip its row in the README's **Supported services** table to ✅.
 - Copy radarr's Nix test files so CI can spin up a real Sonarr in a VM and test against it, and add the app to the NixOS module's startup ordering (one line) so the sync runs after it.
 
 The engine, the diffing, the secret handling, the docs generator — none of that changes. You're describing an app, not extending the core.

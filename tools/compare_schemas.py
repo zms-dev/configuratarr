@@ -10,40 +10,12 @@ Output:
   - Fields only in spec2
   - Fields in both with type differences
   - Fields in both with same type (shown with --all)
+
+allOf is merged before comparing; oneOf/anyOf are flagged.
 """
-import json
 import sys
 
-
-def load_spec(path: str) -> dict:
-    with open(path) as f:
-        return json.load(f)
-
-
-def resolve_ref(ref: str, spec: dict) -> dict:
-    parts = ref.lstrip("#/").split("/")
-    node = spec
-    for p in parts:
-        node = node[p]
-    return node
-
-
-def describe_type(prop: dict, spec: dict) -> str:
-    if "$ref" in prop:
-        ref = prop["$ref"]
-        name = ref.split("/")[-1]
-        resolved = resolve_ref(ref, spec)
-        if "enum" in resolved:
-            return f"enum:{name}{resolved['enum']}"
-        return name
-    t = prop.get("type", "")
-    if t == "array":
-        items = prop.get("items", {})
-        if "$ref" in items:
-            return f"array<{items['$ref'].split('/')[-1]}>"
-        return f"array<{items.get('type', '?')}>"
-    nullable = prop.get("nullable", False)
-    return f"{t}{'?' if nullable else ''}" if t else "?"
+from common import load_spec, resolve_ref, describe_type, schema_properties  # resolve_ref re-exported for parity
 
 
 def get_fields(schema_ref: str, spec: dict) -> dict[str, str]:
@@ -51,8 +23,14 @@ def get_fields(schema_ref: str, spec: dict) -> dict[str, str]:
     schema = spec.get("components", {}).get("schemas", {}).get(name)
     if schema is None:
         return {}
-    props = schema.get("properties", {})
-    return {field: describe_type(prop, spec) for field, prop in props.items()}
+    props, _ = schema_properties(schema, spec)
+    return {field: describe_type(prop, spec, nullable_suffix=True) for field, prop in props.items()}
+
+
+def _notes(schema_ref: str, spec: dict) -> list[str]:
+    name = schema_ref.split("/")[-1]
+    schema = spec.get("components", {}).get("schemas", {}).get(name)
+    return schema_properties(schema, spec)[1] if schema else []
 
 
 def main():
@@ -85,6 +63,9 @@ def main():
     print(f"Comparing:")
     print(f"  A: {ref1}  ({spec1_path})")
     print(f"  B: {ref2}  ({spec2_path})")
+    for side, ref, spec in (("A", ref1, spec1), ("B", ref2, spec2)):
+        for note in _notes(ref, spec):
+            print(f"  ⚠ {side}: {note}")
     print()
 
     if only_in_1:

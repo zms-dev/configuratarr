@@ -148,6 +148,13 @@ pub struct FieldDescriptor<T: 'static> {
     /// object on the wire. Only meaningful on `Nested` fields.
     pub flatten: bool,
 
+    /// `#[fields_map]` — a `Json` *object* field rendered on the wire as a
+    /// `[{name, value}]` array (the *arr provider fields blob) and collected
+    /// back into a map on decode. Lets users author the open provider settings
+    /// as a plain YAML map (`fields: { baseUrl: ... }`) instead of a list of
+    /// `{name, value}` entries. Only the standard wire codec acts on this flag.
+    pub fields_map: bool,
+
     /// Reference target type from `#[reference(<type>)]`: this plain `i32` /
     /// `Vec<i32>` field is resolved from a `${ref.<type>.<key>}` expression.
     /// Drives the dependency graph.

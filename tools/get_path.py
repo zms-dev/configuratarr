@@ -7,14 +7,13 @@ Usage:
 
 Example:
   get_path.py radarr-v3.json /api/v3/config/naming
+
+Inline (non-$ref) request/response bodies are expanded to their fields, so
+specs that don't name component schemas are still inspectable here.
 """
-import json
 import sys
 
-
-def load_spec(path: str) -> dict:
-    with open(path) as f:
-        return json.load(f)
+from common import load_spec, describe_type, schema_properties
 
 
 def extract_schema_ref(schema: dict) -> str | None:
@@ -23,6 +22,23 @@ def extract_schema_ref(schema: dict) -> str | None:
     if schema.get("type") == "array" and "$ref" in schema.get("items", {}):
         return f"array<{schema['items']['$ref']}>"
     return None
+
+
+def _describe_body(label: str, schema: dict, spec: dict) -> None:
+    """Print a request/response body: its ref, or — if inline — its fields."""
+    ref = extract_schema_ref(schema)
+    if ref:
+        print(f"    {label}: {ref}")
+        return
+    inner = schema.get("items", schema) if schema.get("type") == "array" else schema
+    arr = "array of " if schema.get("type") == "array" else ""
+    props, _ = schema_properties(inner, spec)
+    if props:
+        print(f"    {label}: {arr}inline object")
+        for fname, prop in props.items():
+            print(f"        {fname}: {describe_type(prop, spec, nullable_suffix=True)}")
+    elif schema.get("type"):
+        print(f"    {label}: {arr}{schema.get('type')}")
 
 
 def main():
@@ -37,7 +53,6 @@ def main():
 
     path_item = paths.get(target_path)
     if path_item is None:
-        # Try prefix match
         matches = [p for p in paths if p.startswith(target_path)]
         if not matches:
             print(f"ERROR: path '{target_path}' not found", file=sys.stderr)
@@ -59,36 +74,29 @@ def main():
         op = path_item[method]
         print(f"  {method.upper()}")
 
-        # Parameters
         params = op.get("parameters", [])
-        if params:
-            for p in params:
-                loc = p.get("in", "?")
-                pname = p.get("name", "?")
-                pschema = p.get("schema", {})
-                ptype = pschema.get("type", "?")
-                default = pschema.get("default")
-                req = p.get("required", False)
-                default_str = f" = {default!r}" if default is not None else ""
-                req_str = " (required)" if req else ""
-                print(f"    param [{loc}] {pname}: {ptype}{default_str}{req_str}")
+        for p in params:
+            loc = p.get("in", "?")
+            pname = p.get("name", "?")
+            pschema = p.get("schema", {})
+            ptype = pschema.get("type", "?")
+            default = pschema.get("default")
+            default_str = f" = {default!r}" if default is not None else ""
+            req_str = " (required)" if p.get("required", False) else ""
+            print(f"    param [{loc}] {pname}: {ptype}{default_str}{req_str}")
 
-        # Request body
         rb = op.get("requestBody", {})
         if rb:
-            for ct, ct_val in rb.get("content", {}).items():
-                ref = extract_schema_ref(ct_val.get("schema", {}))
-                if ref:
-                    print(f"    request body: {ref}")
+            for ct_val in rb.get("content", {}).values():
+                _describe_body("request body", ct_val.get("schema", {}), spec)
 
-        # Responses
         for status, resp in op.get("responses", {}).items():
-            for ct, ct_val in resp.get("content", {}).items():
-                ref = extract_schema_ref(ct_val.get("schema", {}))
-                if ref:
-                    print(f"    response {status}: {ref}")
-                elif resp.get("description"):
-                    print(f"    response {status}: {resp['description']}")
+            content = resp.get("content", {})
+            if content:
+                for ct_val in content.values():
+                    _describe_body(f"response {status}", ct_val.get("schema", {}), spec)
+            elif resp.get("description"):
+                print(f"    response {status}: {resp['description']}")
 
         print()
 

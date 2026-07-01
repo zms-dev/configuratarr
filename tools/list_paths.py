@@ -9,13 +9,9 @@ Examples:
   list_paths.py radarr-v3.json
   list_paths.py radarr-v3.json /api/v3/config
 """
-import json
 import sys
 
-
-def load_spec(path: str) -> dict:
-    with open(path) as f:
-        return json.load(f)
+from common import load_spec
 
 
 def main():
