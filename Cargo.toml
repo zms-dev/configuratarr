@@ -36,7 +36,13 @@ resolver = "2"
 
 [workspace.dependencies]
 anyhow             = "1.0"
-reqwest            = { version = "0.13", default-features = false, features = ["json", "rustls"] }
+# rustls-no-provider: we hand reqwest a preconfigured rustls ClientConfig
+# (use_preconfigured_tls) built with the ring provider + bundled webpki roots.
+# Avoids aws-lc/cmake and rustls-platform-verifier's OS-trust-store read (which
+# fails in the CA-less nix build sandbox). See core-http.
+reqwest            = { version = "0.13", default-features = false, features = ["json", "rustls-no-provider"] }
+rustls             = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+webpki-roots       = "1"
 tokio              = { version = "1", features = ["full"] }
 serde              = { version = "1.0", features = ["derive"] }
 serde_json         = "1.0"

@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
@@ -115,6 +116,90 @@ impl HttpClient {
     }
 }
 
+/// Build the rustls config reqwest uses (`use_preconfigured_tls`). We drive TLS
+/// ourselves so the trust anchors are the **bundled** webpki roots rather than
+/// the OS trust store — reqwest 0.13's default (`rustls-platform-verifier`)
+/// reads the system store, which is absent in the CA-less nix build sandbox and
+/// aborts client construction. The ring provider avoids aws-lc/cmake.
+///
+/// `insecure` swaps root verification for a no-op verifier — the opt-in escape
+/// hatch for a self-signed *arr instance (the old `danger_accept_invalid_certs`).
+fn tls_config(insecure: bool) -> rustls::ClientConfig {
+    let builder = rustls::ClientConfig::builder_with_provider(Arc::new(
+        rustls::crypto::ring::default_provider(),
+    ))
+    .with_safe_default_protocol_versions()
+    .expect("ring provider supports the default protocol versions");
+
+    if insecure {
+        builder
+            .dangerous()
+            .with_custom_certificate_verifier(Arc::new(danger::NoVerifier))
+            .with_no_client_auth()
+    } else {
+        let mut roots = rustls::RootCertStore::empty();
+        roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+        builder.with_root_certificates(roots).with_no_client_auth()
+    }
+}
+
+/// Certificate verifier that accepts anything — only wired in when the caller
+/// asks for `insecure`. Isolated in its own module so the `dangerous` surface is
+/// obvious and greppable.
+mod danger {
+    use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
+    use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
+    use rustls::{DigitallySignedStruct, Error, SignatureScheme};
+
+    #[derive(Debug)]
+    pub struct NoVerifier;
+
+    impl ServerCertVerifier for NoVerifier {
+        fn verify_server_cert(
+            &self,
+            _end_entity: &CertificateDer<'_>,
+            _intermediates: &[CertificateDer<'_>],
+            _server_name: &ServerName<'_>,
+            _ocsp_response: &[u8],
+            _now: UnixTime,
+        ) -> Result<ServerCertVerified, Error> {
+            Ok(ServerCertVerified::assertion())
+        }
+
+        fn verify_tls12_signature(
+            &self,
+            _message: &[u8],
+            _cert: &CertificateDer<'_>,
+            _dss: &DigitallySignedStruct,
+        ) -> Result<HandshakeSignatureValid, Error> {
+            Ok(HandshakeSignatureValid::assertion())
+        }
+
+        fn verify_tls13_signature(
+            &self,
+            _message: &[u8],
+            _cert: &CertificateDer<'_>,
+            _dss: &DigitallySignedStruct,
+        ) -> Result<HandshakeSignatureValid, Error> {
+            Ok(HandshakeSignatureValid::assertion())
+        }
+
+        fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+            vec![
+                SignatureScheme::RSA_PKCS1_SHA256,
+                SignatureScheme::RSA_PKCS1_SHA384,
+                SignatureScheme::RSA_PKCS1_SHA512,
+                SignatureScheme::ECDSA_NISTP256_SHA256,
+                SignatureScheme::ECDSA_NISTP384_SHA384,
+                SignatureScheme::RSA_PSS_SHA256,
+                SignatureScheme::RSA_PSS_SHA384,
+                SignatureScheme::RSA_PSS_SHA512,
+                SignatureScheme::ED25519,
+            ]
+        }
+    }
+}
+
 impl HttpClientBuilder {
     pub fn header(mut self, name: &'static str, value: SecretString) -> Self {
         self.headers.push((name, value));
@@ -145,7 +230,7 @@ impl HttpClientBuilder {
         let inner = reqwest::Client::builder()
             .timeout(self.timeout)
             .default_headers(headers)
-            .danger_accept_invalid_certs(self.insecure)
+            .use_preconfigured_tls(tls_config(self.insecure))
             .build()
             .context("building HTTP client")?;
 
