@@ -63,4 +63,9 @@ in
     inherit pkgs;
     e2eShell = e2e;
   };
+
+  e2e-lidarr = import ./e2e-shells/lidarr-v1.nix {
+    inherit pkgs;
+    e2eShell = e2e;
+  };
 }

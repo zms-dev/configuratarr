@@ -121,7 +121,8 @@
           }
           // mkServiceChecks "radarr-v3" (import ./nix/e2e/radarr-v3.nix { inherit pkgs; })
           // mkServiceChecks "sonarr-v3" (import ./nix/e2e/sonarr-v3.nix { inherit pkgs; })
-          // mkServiceChecks "prowlarr-v1" (import ./nix/e2e/prowlarr-v1.nix { inherit pkgs; });
+          // mkServiceChecks "prowlarr-v1" (import ./nix/e2e/prowlarr-v1.nix { inherit pkgs; })
+          // mkServiceChecks "lidarr-v1" (import ./nix/e2e/lidarr-v1.nix { inherit pkgs; });
 
           formatter = pkgs.nixfmt-tree;
 

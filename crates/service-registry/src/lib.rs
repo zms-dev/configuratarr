@@ -29,6 +29,7 @@ macro_rules! service_registry {
             RadarrV3 => "radarr-v3" : radarr_v3::RadarrV3 = "Radarr v3",
             SonarrV3 => "sonarr-v3" : sonarr_v3::SonarrV3 = "Sonarr v3",
             ProwlarrV1 => "prowlarr-v1" : prowlarr_v1::ProwlarrV1 = "Prowlarr v1",
+            LidarrV1 => "lidarr-v1" : lidarr_v1::LidarrV1 = "Lidarr v1",
         }
     };
 }

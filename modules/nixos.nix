@@ -29,6 +29,7 @@ in
         "radarr.service"
         "sonarr.service"
         "prowlarr.service"
+        "lidarr.service"
       ];
 
       serviceConfig = {
