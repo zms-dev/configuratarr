@@ -124,3 +124,51 @@ attribute set
  - [../modules/nixos.nix](../modules/nixos.nix)
 
 
+
+## services.configuratarr.waitForHealthy
+
+
+
+Pass ` --wait-for-healthy ` to poll each service’s health endpoint before syncing.
+
+
+
+*Type:*
+boolean
+
+
+
+*Default:*
+
+```nix
+false
+```
+
+*Declared by:*
+ - [../modules/nixos.nix](../modules/nixos.nix)
+
+
+
+## services.configuratarr.waitTimeout
+
+
+
+Max seconds to wait per service when ` waitForHealthy ` is enabled.
+
+
+
+*Type:*
+unsigned integer, meaning >=0
+
+
+
+*Default:*
+
+```nix
+120
+```
+
+*Declared by:*
+ - [../modules/nixos.nix](../modules/nixos.nix)
+
+
