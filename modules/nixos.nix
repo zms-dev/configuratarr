@@ -42,6 +42,8 @@ in
             # Non-interactive: systemd has no TTY for the confirmation prompt.
             "--auto-approve"
           ]
+          ++ lib.optional cfg.waitForHealthy "--wait-for-healthy"
+          ++ lib.optional cfg.waitForHealthy "--wait-timeout ${toString cfg.waitTimeout}"
           ++ lib.optional cfg.prune "--prune"
         );
         RemainAfterExit = true;

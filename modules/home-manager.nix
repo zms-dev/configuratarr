@@ -33,6 +33,8 @@ in
             # Non-interactive: the user service has no TTY for the confirm prompt.
             "--auto-approve"
           ]
+          ++ lib.optional cfg.waitForHealthy "--wait-for-healthy"
+          ++ lib.optional cfg.waitForHealthy "--wait-timeout ${toString cfg.waitTimeout}"
           ++ lib.optional cfg.prune "--prune"
         );
       };
