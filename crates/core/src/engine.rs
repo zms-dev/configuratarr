@@ -287,7 +287,7 @@ fn collect_secret_keys(d: crate::described::ResourceDescriptorErased<'_>, out: &
     use crate::field::FieldRef;
     for f in d.fields.iter {
         if f.secret {
-            out.push(codec::standard::wire_key(f.name, f.wire_name));
+            out.push(codec::standard::wire_key(f.name, f.wire_name, d.case));
         }
         if f.flatten
             && let FieldRef::Nested(n) = f.value
@@ -301,7 +301,7 @@ fn find_key(d: crate::described::ResourceDescriptorErased<'_>) -> Option<String>
     use crate::field::{FieldRef, FieldRole};
     for f in d.fields.iter {
         if f.role == FieldRole::Key {
-            return Some(codec::standard::wire_key(f.name, f.wire_name));
+            return Some(codec::standard::wire_key(f.name, f.wire_name, d.case));
         }
         if f.flatten
             && let FieldRef::Nested(n) = f.value

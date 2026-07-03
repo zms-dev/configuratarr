@@ -40,8 +40,8 @@ pub struct ServiceField<S: 'static> {
     /// The resource's snake-case type name (`${ref}` target, dep-graph node).
     pub type_name: &'static str,
 
-    /// The resource's declared sync strategy. The executor dispatches on this,
-    /// *not* on the field's `Vec`/`Option` shape.
+    /// The resource's declared sync strategy (a `Custom` carries its hook). The
+    /// executor dispatches on this, *not* on the field's `Vec`/`Option` shape.
     pub sync: fn() -> crate::SyncKind,
 
     /// Type-erased iterator over the resource(s) — each `Vec<R>` element, or
@@ -49,7 +49,7 @@ pub struct ServiceField<S: 'static> {
     pub iter: for<'a> fn(&'a S) -> Box<dyn Iterator<Item = &'a dyn ResourceErased> + 'a>,
 
     /// The types this resource references (`#[reference(t)]`), read statically so
-    /// apply ordering works even for empty collections (refs are plain `i32`).
+    /// apply ordering works even for empty collections.
     pub ref_targets: fn() -> Vec<&'static str>,
 
     /// The resource's HTTP operations.

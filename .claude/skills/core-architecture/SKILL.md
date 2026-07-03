@@ -21,9 +21,9 @@ Consequences: no `Interpolated<T>` wrapper, no `CollectRefs`/`Referenceable`/`Se
 ## `core/src` map
 
 ```
-descriptor.rs   ResourceDescriptor, Endpoint(s), HttpMethod, SyncKind, CodecMeta, DefaultLit,
-                FieldDescriptor (name/doc/role/kind/wire_name/read_only/default/secret/flatten/
-                fields_map/reference/nested_docs/get/set), VariantDescriptor
+descriptor.rs   ResourceDescriptor, Case (camel|pascal), Endpoint(s), HttpMethod, SyncKind,
+                CodecMeta, DefaultLit, FieldDescriptor (name/doc/role/kind/wire_name/read_only/
+                default/secret/flatten/fields_map/reference/nested_docs/get/set), VariantDescriptor
 described.rs     Described trait (descriptor/empty/encode_variant/decode_variant/...);
                  ResourceErased + ErasedField (the type-erased walk used by nested recursion + doc-gen)
 field.rs         FieldKind / FieldRef / FieldValue / FieldRole
@@ -31,7 +31,8 @@ codec/           standard, fields_blob, tagged_by_impl, string_enum, config; Cod
 engine.rs        encode/decode/decode_config dispatch; key_wire_name, reference_targets,
                  secret_wire_keys, field_docs/resource_docs (doc-gen)
 resolve.rs       ${env}/${file}/${ref}/${self} on the Value tree (one `substitute` primitive)
-resolver.rs      StaticEnv / RefSource traits + SystemEnv
+resolver.rs      StaticEnv / RefSource traits + SystemEnv; RefId (Int(i64)|Str) — the bounded ref id
+apply.rs         (…executor…) + CustomSync trait / CustomSyncFn — the `sync = custom` hook seam
 merge.rs         sparse-update merge (live ⊕ desired; fields[] by name)
 plan.rs          Plan/PlanStep/Op/FieldChange/Report + DisplayValue + render()
 apply.rs         plan()/apply()/run() executor; topo order; RefStore; connect/auth
@@ -44,14 +45,16 @@ service.rs       Service trait, ServiceDescriptor, ServiceField, Connection, Aut
 |---|---|---|---|
 | **endpoints** | `list/read/create/update/delete = verb("/path")` | `Endpoints` | pure data: verb + path (`${self.*}`-capable) |
 | **codec** | which macro you use | `CodecKind` | wire shape |
-| **sync** | `sync = crud\|singleton\|bulk_replace\|custom` | `SyncKind` | write strategy; the executor dispatches on this, **not** struct shape |
+| **sync** | `sync = crud\|singleton\|custom` | `SyncKind` | write strategy; the executor dispatches on this, **not** struct shape (`Custom` carries its hook) |
 | **auth** | `auth = ...` on `#[service]` | `Auth` | None / ApiKey / Bearer / Basic / FormCookie |
 
 Extension model: **select** (name an impl) → **register** (add an enum variant + dispatch arm) → **custom** (`<axis> = custom` → a hand-written hook in the contributor's crate). Dispatch is static enum + `match` (compile-time exhaustive; the central edit is the review gate).
 
 ## Codecs
 
-- **Standard** — snake→camelCase JSON object.
+- **Standard** — snake→camelCase JSON object by default; a resource may set `case = pascal`
+  (`ResourceDescriptor.case`, applied in `wire_key`) for .NET-style PascalCase APIs (Jellyfin). Casing is
+  descriptor *data*, not macro behaviour — one implementation (`to_camel_case`; pascal = +upcase first).
 - **FieldsBlob** — `{implementation, configContract, fields:[{name,value}]}`; each typed field → one entry. For an **open** key set (no fixed struct — e.g. Prowlarr Cardigann indexers), a `#[fields_map]` `Json` field on a Standard struct (`RawProvider`) carries a `name: value` map that the standard wire codec splays to / collects from the same `fields:[{name,value}]` array.
 - **TaggedByImpl** — reads a discriminator key, delegates to the matching variant's codec.
 - **StringEnum** — unit enum ↔ bare wire string.
@@ -83,6 +86,11 @@ PUT body = `merge(live, desired)`: live base, desired wins, omitted keys keep li
 
 `engine::resource_docs::<T>()` walks `T::empty().descriptor_erased()`, descends `#[flatten]`, drops read-only/id, and surfaces: flat fields, provider blocks (from flattened tagged enums via `VariantDescriptor.field_docs`), nested types (via `FieldDescriptor.nested_docs` fn-pointers — reachable even when the value is absent), and `#[wire_enum]` allowed values. `config-doc-gen` BFSs that graph into a fully cross-linked markdown doc. No global type registry — the macro emits the fn-pointers.
 
-## Known seams (build when a service demands)
+## Seams
 
-Async `AuthScheme`/`Authenticator` traits (Basic/FormCookie/OAuth2 bail today); string ids (i32 → string-or-number for Jellyfin GUIDs); `SyncKind::BulkReplace`/`Custom`; fanned update (`update: Option<Endpoint>` → slice); pagination; normalization-before-diff.
+**Built (extend, don't reinvent):**
+- **String/GUID ids** — the ref id is [`resolver::RefId`] (`Int(i64)|Str`); `RefStore`/`RefSource` are keyed by it, resolve substitutes `RefId::to_value()`. *arr stay `Int`.
+- **`SyncKind::Custom(CustomSyncFn)`** — the hook is carried by the variant (no separate descriptor field); `apply::custom_step` dispatches to a hand-written async reconcile hook for APIs that don't fit crud/singleton (multi-endpoint, query-keyed identity, server-gen ids). The hook returns `Vec<Change>` (Created/Updated/Unchanged + safe display rows) and the engine builds the report `Op`s — so hooks never touch the plan model or leak a raw body, **but** the hook owns its own HTTP/ordering/idempotency and must honour `execute`. Recurring hook shapes live in the *service* crate (e.g. jellyfin `resources/custom.rs`), not core. Whole-list "replace" APIs (e.g. Jellyfin `/Repositories`) are a custom hook, not a dedicated sync kind.
+- **PascalCase codec** — `case = pascal` (see Codecs).
+
+**Still open (build when a service demands):** async `AuthScheme`/`Authenticator` traits (Basic/FormCookie/OAuth2 bail today); fanned update (`update: Option<Endpoint>` → slice); pagination; normalization-before-diff.

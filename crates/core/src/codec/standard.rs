@@ -8,7 +8,7 @@
 use serde_json::{Map, Number, Value};
 
 use crate::described::Described;
-use crate::descriptor::FieldDescriptor;
+use crate::descriptor::{Case, FieldDescriptor};
 use crate::field::FieldRef;
 
 /// Encode a resource to its wire JSON object.
@@ -16,7 +16,7 @@ pub fn encode<T: Described>(value: &T) -> anyhow::Result<Value> {
     let desc = T::descriptor();
     let mut map = Map::new();
     for f in desc.fields {
-        emit_field(&mut map, f, (f.get)(value))?;
+        emit_field(&mut map, f, (f.get)(value), desc.case)?;
     }
     Ok(Value::Object(map))
 }
@@ -28,6 +28,7 @@ fn emit_field<T: 'static>(
     map: &mut Map<String, Value>,
     f: &FieldDescriptor<T>,
     r: FieldRef<'_>,
+    case: Case,
 ) -> anyhow::Result<()> {
     if f.read_only {
         return Ok(());
@@ -43,7 +44,7 @@ fn emit_field<T: 'static>(
             },
             _ => anyhow::bail!("#[fields_map] requires a Json field on `{}`", f.name),
         };
-        map.insert(wire_key(f.name, f.wire_name), Value::Array(arr));
+        map.insert(wire_key(f.name, f.wire_name, case), Value::Array(arr));
         return Ok(());
     }
     if f.flatten
@@ -62,11 +63,11 @@ fn emit_field<T: 'static>(
             for n in it {
                 arr.push(n.encode_self()?);
             }
-            map.insert(wire_key(f.name, f.wire_name), Value::Array(arr));
+            map.insert(wire_key(f.name, f.wire_name, case), Value::Array(arr));
         }
         other => {
             if let Some(v) = field_to_json(&other)? {
-                map.insert(wire_key(f.name, f.wire_name), v);
+                map.insert(wire_key(f.name, f.wire_name, case), v);
             }
         }
     }
@@ -158,11 +159,15 @@ fn num_f64(x: f64) -> anyhow::Result<Value> {
         .ok_or_else(|| anyhow::anyhow!("non-finite float cannot be encoded as JSON: {x}"))
 }
 
-/// Wire key: explicit `wire_name` override, else snake_case → camelCase.
-pub(crate) fn wire_key(name: &str, wire_name: Option<&str>) -> String {
+/// Wire key: explicit `wire_name` override, else snake_case cased per the
+/// resource's [`Case`] — camelCase (default) or PascalCase (.NET-style APIs).
+pub(crate) fn wire_key(name: &str, wire_name: Option<&str>, case: Case) -> String {
     match wire_name {
         Some(w) => w.to_string(),
-        None => to_camel_case(name),
+        None => match case {
+            Case::Camel => to_camel_case(name),
+            Case::Pascal => to_pascal_case(name),
+        },
     }
 }
 
@@ -182,6 +187,17 @@ fn to_camel_case(s: &str) -> String {
     out
 }
 
+/// PascalCase = camelCase with the first character upper-cased. Single casing
+/// base, so both spellings stay in sync.
+fn to_pascal_case(s: &str) -> String {
+    let camel = to_camel_case(s);
+    let mut chars = camel.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+        None => camel,
+    }
+}
+
 /// Decode a resource from its wire JSON object.
 ///
 /// Builds an empty instance, then populates each present (non-null) field via
@@ -195,6 +211,7 @@ pub fn decode<T: Described>(value: &Value) -> anyhow::Result<T> {
 
     let mut out = T::empty();
     let desc = T::descriptor();
+    let case = desc.case;
     for f in desc.fields {
         // A flattened nested struct reads its fields from the parent object.
         if f.flatten {
@@ -204,7 +221,7 @@ pub fn decode<T: Described>(value: &Value) -> anyhow::Result<T> {
         }
         // `#[fields_map]`: collect the `[{name, value}]` blob into a map.
         if f.fields_map {
-            let key = wire_key(f.name, f.wire_name);
+            let key = wire_key(f.name, f.wire_name, case);
             let map = obj
                 .get(&key)
                 .and_then(Value::as_array)
@@ -214,7 +231,7 @@ pub fn decode<T: Described>(value: &Value) -> anyhow::Result<T> {
                 .map_err(|e| anyhow::anyhow!("field `{}`: {e}", f.name))?;
             continue;
         }
-        let key = wire_key(f.name, f.wire_name);
+        let key = wire_key(f.name, f.wire_name, case);
         let Some(jv) = obj.get(&key) else { continue };
         if jv.is_null() {
             continue;

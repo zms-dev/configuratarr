@@ -89,10 +89,10 @@ fn descriptor_field_kinds() {
     // Vec<ColResource>: type_name is snake_case("ColResource"); the dispatch
     // strategy is the resource's own declared `sync` (crud), not the Vec shape.
     assert_eq!(d.fields[0].type_name, "col_resource");
-    assert_eq!((d.fields[0].sync)(), SyncKind::Crud);
+    assert!(matches!((d.fields[0].sync)(), SyncKind::Crud));
     // Option<SingResource> → snake_case("SingResource"), sync = singleton.
     assert_eq!(d.fields[1].type_name, "sing_resource");
-    assert_eq!((d.fields[1].sync)(), SyncKind::Singleton);
+    assert!(matches!((d.fields[1].sync)(), SyncKind::Singleton));
 }
 
 #[test]

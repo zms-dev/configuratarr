@@ -30,6 +30,7 @@ in
         "sonarr.service"
         "prowlarr.service"
         "lidarr.service"
+        "jellyfin.service"
       ];
 
       serviceConfig = {

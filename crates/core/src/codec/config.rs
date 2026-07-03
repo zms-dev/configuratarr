@@ -78,12 +78,13 @@ pub fn present_to_wire<T: Described>(cfg: &Value) -> anyhow::Result<Value> {
     let full_obj = full.as_object().cloned().unwrap_or_default();
 
     let mut out = serde_json::Map::new();
-    for f in T::descriptor().fields {
+    let desc = T::descriptor();
+    for f in desc.fields {
         if f.flatten {
             continue;
         }
         if cfg_obj.contains_key(f.name) {
-            let wk = standard::wire_key(f.name, f.wire_name);
+            let wk = standard::wire_key(f.name, f.wire_name, desc.case);
             if let Some(v) = full_obj.get(&wk) {
                 out.insert(wk, v.clone());
             }

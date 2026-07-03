@@ -34,8 +34,8 @@ impl StaticEnv for DummyEnv {
 pub struct DummyRefs;
 
 impl RefSource for DummyRefs {
-    fn lookup(&self, _: &str, _: &str) -> Option<i32> {
-        Some(1)
+    fn lookup(&self, _: &str, _: &str) -> Option<core_lib::RefId> {
+        Some(core_lib::RefId::Int(1))
     }
 }
 

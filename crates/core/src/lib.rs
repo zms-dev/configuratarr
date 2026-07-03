@@ -19,18 +19,21 @@ pub mod resolver;
 pub mod secret;
 pub mod service;
 
+pub use apply::{Change, ChangeKind, CustomSync, CustomSyncFn, CustomSyncFuture, RefStore};
 pub use codec::CodecKind;
+pub use core_http::HttpClient;
 pub use described::{Described, ResourceErased};
 pub use descriptor::{
-    DefaultLit, Endpoint, Endpoints, FieldDescriptor, HttpMethod, ResourceDescriptor, SyncKind,
-    VariantDescriptor,
+    Case, DefaultLit, Endpoint, Endpoints, FieldDescriptor, HttpMethod, ResourceDescriptor,
+    SyncKind, VariantDescriptor,
 };
+pub use plan::{Op, PlanStep};
 
 /// Opaque JSON, for API blobs we don't model with typed fields. Backed by
 /// `serde_json::Value`; classified as [`FieldKind::Json`].
 pub type Json = serde_json::Value;
 pub use field::{FieldKind, FieldRef, FieldRole, FieldValue};
 pub use refs::RefExpr;
-pub use resolver::{RefSource, StaticEnv, SystemEnv};
+pub use resolver::{RefId, RefSource, StaticEnv, SystemEnv};
 pub use secret::SecretValue;
 pub use service::{Auth, Connection, Service, ServiceDescriptor, ServiceField};

@@ -1,8 +1,18 @@
 //! Static descriptors emitted by the `#[resource]` macro — the macro's entire
 //! output. The engine reads them at runtime to drive encode/decode/resolve.
 
+use crate::apply::CustomSyncFn;
 use crate::codec::CodecKind;
 use crate::field::{FieldRef, FieldRole, FieldValue};
+
+/// Default wire-key casing for fields without an explicit `#[wire(name)]`.
+/// `Camel` is snake→camelCase (the *arr shape); `Pascal` upper-cases the first
+/// character too, for .NET-style APIs (Jellyfin) whose JSON is PascalCase.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Case {
+    Camel,
+    Pascal,
+}
 
 /// An HTTP verb, always declared explicitly at the `#[resource]` site (no
 /// inferred defaults).
@@ -63,8 +73,14 @@ pub struct ResourceDescriptor<T: 'static> {
     /// Which wire-format codec the engine dispatches to.
     pub codec: CodecKind,
 
+    /// How a field's wire key is cased when it has no explicit `#[wire(name)]`.
+    /// The Standard/config codecs read this; `FieldsBlob` variants are always
+    /// camelCase (*arr). Data, not behaviour — the codec applies it.
+    pub case: Case,
+
     /// Write strategy. Orthogonal to `codec` and field roles; always explicit —
     /// the write contract varies per API, never inferred from struct shape.
+    /// `Custom` carries its reconcile hook inline.
     pub sync: SyncKind,
 
     /// Codec-specific metadata; interpretation depends on `codec`. For
@@ -155,8 +171,9 @@ pub struct FieldDescriptor<T: 'static> {
     /// `{name, value}` entries. Only the standard wire codec acts on this flag.
     pub fields_map: bool,
 
-    /// Reference target type from `#[reference(<type>)]`: this plain `i32` /
-    /// `Vec<i32>` field is resolved from a `${ref.<type>.<key>}` expression.
+    /// Reference target type from `#[reference(<type>)]`: this FK field (an
+    /// `i32`/`Vec<i32>` for *arr integer ids, or a `String` for GUID APIs) is
+    /// resolved from a `${ref.<type>.<key>}` expression to the target's [`RefId`].
     /// Drives the dependency graph.
     pub reference: Option<&'static str>,
 
@@ -177,14 +194,14 @@ pub struct FieldDescriptor<T: 'static> {
 /// apply time like [`CodecKind`] is at encode time; new API contracts add a
 /// variant plus a hand-written arm in the apply engine. Independent of identity
 /// (`#[key]`) and wire format (`codec`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// Not `PartialEq`: the `Custom` variant carries a fn-pointer, whose equality is
+/// unpredictable (codegen may merge/split addresses). Match on it instead.
+#[derive(Debug, Clone, Copy)]
 pub enum SyncKind {
     /// Per-element CRUD against a collection endpoint: list, POST new, PUT
     /// changed, DELETE pruned. The *arr default.
     Crud,
-
-    /// Replace the whole collection in one PUT. No per-element ids.
-    BulkReplace,
 
     /// Single object behind one endpoint: GET current, PUT merged. No key.
     Singleton,
@@ -194,9 +211,10 @@ pub enum SyncKind {
     /// [`Endpoints::NONE`].
     Embedded,
 
-    /// Escape hatch for a write contract no reusable strategy fits; dispatches
-    /// to a hand-written hook in the contributor's crate.
-    Custom,
+    /// Escape hatch for a write contract no reusable strategy fits: carries a
+    /// hand-written [`CustomSync`](crate::CustomSync) hook that owns the whole
+    /// reconcile (its own HTTP, ordering, idempotency).
+    Custom(CustomSyncFn),
 }
 
 /// Codec-specific metadata attached to a [`ResourceDescriptor`]. Variants are

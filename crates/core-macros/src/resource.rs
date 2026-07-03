@@ -11,8 +11,8 @@ use quote::quote;
 use syn::DeriveInput;
 
 use crate::attrs::{
-    CodecSpec, EndpointSpec, FieldAttrs, HttpMethodSpec, ResourceArgs, SyncSpec, collect_doc,
-    parse_codec_spec,
+    CaseSpec, CodecSpec, EndpointSpec, FieldAttrs, HttpMethodSpec, NestedArgs, ResourceArgs,
+    SyncSpec, collect_doc, parse_codec_spec,
 };
 use crate::field_kind::{Kind, classify, inner_generic, snake_case};
 
@@ -37,8 +37,16 @@ pub fn expand(args: TokenStream, input: TokenStream) -> darling::Result<TokenStr
         .clone()
         .unwrap_or_else(|| snake_case(&ident.to_string()));
     let (codec_kind, codec_meta) = codec_spec_tokens(&codec_spec);
-    let sync_tok = sync_spec_tokens(resource_args.sync);
+    // `sync = custom` carries its reconcile hook inline (the struct must impl
+    // `CustomSync`); every other strategy is a bare variant.
+    let sync_tok = match resource_args.sync {
+        SyncSpec::Custom => {
+            quote!(::core_lib::SyncKind::Custom(<#ident as ::core_lib::CustomSync>::reconcile))
+        }
+        other => sync_spec_tokens(other),
+    };
 
+    let case_tok = case_tokens(resource_args.case);
     let (fields_tok, empty_body) = match &input.data {
         syn::Data::Struct(s) => {
             let (fields, empties) = emit_struct_fields(ident, &s.fields)?;
@@ -68,6 +76,7 @@ pub fn expand(args: TokenStream, input: TokenStream) -> darling::Result<TokenStr
         &struct_doc_tok,
         &codec_kind,
         &codec_meta,
+        &case_tok,
         &sync_tok,
         &fields_tok,
         &[],
@@ -126,6 +135,7 @@ pub(crate) fn emit_described(
     doc_tok: &TokenStream,
     codec_kind: &TokenStream,
     codec_meta: &TokenStream,
+    case_tok: &TokenStream,
     sync_tok: &TokenStream,
     fields_tok: &[TokenStream],
     variants_tok: &[TokenStream],
@@ -142,6 +152,7 @@ pub(crate) fn emit_described(
                     type_name: #type_name,
                     doc: #doc_tok,
                     codec: #codec_kind,
+                    case: #case_tok,
                     sync: #sync_tok,
                     codec_meta: #codec_meta,
                     fields: &[#(#fields_tok),*],
@@ -161,7 +172,8 @@ pub(crate) fn emit_described(
 
 /// `#[nested]` — an embedded sub-resource: no path, `SyncKind::Embedded`,
 /// type_name defaulted from the ident, standard codec (or a `#[codec]` sibling).
-pub fn expand_nested(_args: TokenStream, input: TokenStream) -> darling::Result<TokenStream> {
+pub fn expand_nested(args: TokenStream, input: TokenStream) -> darling::Result<TokenStream> {
+    let nested_args = NestedArgs::from_list(&NestedMeta::parse_meta_list(args)?)?;
     let input: DeriveInput = syn::parse2(input).map_err(Error::from)?;
     let ident = &input.ident;
     let codec_spec = parse_codec_spec(&input.attrs)?;
@@ -169,6 +181,7 @@ pub fn expand_nested(_args: TokenStream, input: TokenStream) -> darling::Result<
     let doc_tok = doc_to_tokens(&collect_doc(&input.attrs));
     let type_name = snake_case(&ident.to_string());
 
+    let case_tok = case_tokens(nested_args.case);
     let (fields_tok, empties) = match &input.data {
         syn::Data::Struct(s) => emit_struct_fields(ident, &s.fields)?,
         _ => return Err(Error::custom("#[nested] only supports structs").with_span(ident)),
@@ -183,6 +196,7 @@ pub fn expand_nested(_args: TokenStream, input: TokenStream) -> darling::Result<
         &doc_tok,
         &codec_kind,
         &codec_meta,
+        &case_tok,
         &quote!(::core_lib::SyncKind::Embedded),
         &fields_tok,
         &[],
@@ -208,6 +222,8 @@ pub fn expand_fields_blob(args: TokenStream, input: TokenStream) -> darling::Res
     let ident = &input.ident;
     let doc_tok = doc_to_tokens(&collect_doc(&input.attrs));
     let type_name = snake_case(&ident.to_string());
+    // Provider fields-blob variants are always *arr camelCase.
+    let case_tok = quote!(::core_lib::Case::Camel);
 
     let (fields_tok, empties) = match &input.data {
         syn::Data::Struct(s) => emit_struct_fields(ident, &s.fields)?,
@@ -223,6 +239,7 @@ pub fn expand_fields_blob(args: TokenStream, input: TokenStream) -> darling::Res
         &doc_tok,
         &codec_kind,
         &codec_meta,
+        &case_tok,
         &quote!(::core_lib::SyncKind::Embedded),
         &fields_tok,
         &[],
@@ -248,9 +265,15 @@ fn default_lit_tokens(lit: &syn::Lit) -> darling::Result<TokenStream> {
 fn sync_spec_tokens(spec: SyncSpec) -> TokenStream {
     match spec {
         SyncSpec::Crud => quote!(::core_lib::SyncKind::Crud),
-        SyncSpec::BulkReplace => quote!(::core_lib::SyncKind::BulkReplace),
         SyncSpec::Singleton => quote!(::core_lib::SyncKind::Singleton),
         SyncSpec::Custom => quote!(::core_lib::SyncKind::Custom),
+    }
+}
+
+fn case_tokens(spec: CaseSpec) -> TokenStream {
+    match spec {
+        CaseSpec::Camel => quote!(::core_lib::Case::Camel),
+        CaseSpec::Pascal => quote!(::core_lib::Case::Pascal),
     }
 }
 
@@ -335,7 +358,7 @@ fn emit_struct_fields(
         let get_tok = kind.to_get_expr(field_ident);
         let set_tok = kind.to_set_expr(field_ident, &f.ty);
 
-        let wire_name_tok: TokenStream = match attrs.wire_name {
+        let wire_name_tok: TokenStream = match &attrs.wire_name {
             Some(n) => quote!(Some(#n)),
             None => quote!(None),
         };

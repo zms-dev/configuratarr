@@ -5,6 +5,7 @@ use anyhow::{Context, Result};
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use secrecy::{ExposeSecret, SecretString};
 use serde::{Serialize, de::DeserializeOwned};
+use serde_json::Value;
 
 #[derive(Debug, Clone)]
 pub struct HttpClient {
@@ -40,7 +41,9 @@ impl HttpClient {
         self.parse_json(resp, &url).await
     }
 
-    pub async fn post<B: Serialize, T: DeserializeOwned>(&self, path: &str, body: &B) -> Result<T> {
+    /// POST a JSON body. Writes return their response as opaque JSON (or
+    /// [`Value::Null`] when the server sends no content — see [`Self::parse_write`]).
+    pub async fn post<B: Serialize>(&self, path: &str, body: &B) -> Result<Value> {
         let url = format!("{}{}", self.base_url, path);
         let resp = self
             .inner
@@ -49,10 +52,11 @@ impl HttpClient {
             .send()
             .await
             .with_context(|| format!("POST {url}"))?;
-        self.parse_json(resp, &url).await
+        self.parse_write(resp, &url).await
     }
 
-    pub async fn put<B: Serialize, T: DeserializeOwned>(&self, path: &str, body: &B) -> Result<T> {
+    /// PUT a JSON body. See [`Self::post`].
+    pub async fn put<B: Serialize>(&self, path: &str, body: &B) -> Result<Value> {
         let url = format!("{}{}", self.base_url, path);
         let resp = self
             .inner
@@ -61,14 +65,11 @@ impl HttpClient {
             .send()
             .await
             .with_context(|| format!("PUT {url}"))?;
-        self.parse_json(resp, &url).await
+        self.parse_write(resp, &url).await
     }
 
-    pub async fn patch<B: Serialize, T: DeserializeOwned>(
-        &self,
-        path: &str,
-        body: &B,
-    ) -> Result<T> {
+    /// PATCH a JSON body. See [`Self::post`].
+    pub async fn patch<B: Serialize>(&self, path: &str, body: &B) -> Result<Value> {
         let url = format!("{}{}", self.base_url, path);
         let resp = self
             .inner
@@ -77,7 +78,7 @@ impl HttpClient {
             .send()
             .await
             .with_context(|| format!("PATCH {url}"))?;
-        self.parse_json(resp, &url).await
+        self.parse_write(resp, &url).await
     }
 
     pub async fn delete(&self, path: &str) -> Result<()> {
@@ -91,6 +92,10 @@ impl HttpClient {
         self.check_status(resp, &url).await
     }
 
+    /// Parse a **read** (GET) response: non-2xx → error, otherwise the body
+    /// deserialized to `T`. Strict — an empty body is an error, since a read is
+    /// expected to return content. (Writes use [`Self::parse_write`], which
+    /// tolerates an empty body.)
     async fn parse_json<T: DeserializeOwned>(
         &self,
         resp: reqwest::Response,
@@ -104,6 +109,28 @@ impl HttpClient {
         resp.json::<T>()
             .await
             .with_context(|| format!("deserializing response from {url}"))
+    }
+
+    /// Parse a **write** (POST/PUT/PATCH) response as opaque JSON. Non-2xx →
+    /// error; an empty 2xx body (HTTP 204 or an empty 200 — common for config
+    /// writes, e.g. Jellyfin) → [`Value::Null`]; otherwise the parsed JSON. Value-
+    /// typed rather than generic: a write's body is only ever read opaquely (a
+    /// created id, or ignored), so `Null` is always a valid stand-in — no risk of
+    /// coercing `null` into some concrete `T` that can't represent it.
+    async fn parse_write(&self, resp: reqwest::Response, url: &str) -> Result<Value> {
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            anyhow::bail!("HTTP {status}: {body}");
+        }
+        let bytes = resp
+            .bytes()
+            .await
+            .with_context(|| format!("reading response body from {url}"))?;
+        if bytes.is_empty() {
+            return Ok(Value::Null);
+        }
+        serde_json::from_slice(&bytes).with_context(|| format!("deserializing response from {url}"))
     }
 
     async fn check_status(&self, resp: reqwest::Response, _url: &str) -> Result<()> {

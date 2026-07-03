@@ -19,9 +19,12 @@ Reads a desired-state YAML file, diffs it against each app's live REST API, and 
 | Sonarr | v3 | `sonarr-v3` | ✅ Supported |
 | Lidarr | v1 | `lidarr-v1` | ✅ Supported |
 | Prowlarr | v1 | `prowlarr-v1` | ✅ Supported |
+| Jellyfin | v10.11 | `jellyfin-v11` | ✅ Supported (server config) |
 | Readarr | — | — | 🚧 Planned |
 
-More of the ecosystem (Jellyfin, Bazarr, Jellyseerr, …) is on the radar. The engine is service-agnostic — adding one is filling in a template, not changing the core. See [`docs/contributors.md`](docs/contributors.md).
+Jellyfin currently covers the server config singletons (system, network, encoding, metadata, branding); users, libraries, and API keys need engine work for string/GUID ids and custom multi-endpoint sync, and are staged next.
+
+More of the ecosystem (Bazarr, Jellyseerr, …) is on the radar. The engine is service-agnostic — adding one is filling in a template, not changing the core. See [`docs/contributors.md`](docs/contributors.md).
 
 ---
 

@@ -24,8 +24,20 @@ impl StaticEnv for MapEnv {
 
 struct MapRefs(HashMap<(String, String), i32>);
 impl RefSource for MapRefs {
-    fn lookup(&self, ty: &str, key: &str) -> Option<i32> {
-        self.0.get(&(ty.to_string(), key.to_string())).copied()
+    fn lookup(&self, ty: &str, key: &str) -> Option<core_lib::RefId> {
+        self.0
+            .get(&(ty.to_string(), key.to_string()))
+            .map(|&id| core_lib::RefId::Int(id.into()))
+    }
+}
+
+/// A [`RefSource`] with GUID/string ids (Jellyfin-style).
+struct StrRefs(HashMap<(String, String), String>);
+impl RefSource for StrRefs {
+    fn lookup(&self, ty: &str, key: &str) -> Option<core_lib::RefId> {
+        self.0
+            .get(&(ty.to_string(), key.to_string()))
+            .map(|s| core_lib::RefId::Str(s.clone()))
     }
 }
 
@@ -107,6 +119,22 @@ fn resolve_refs_whole_value_becomes_number() {
     resolve::resolve_refs(&mut v, &refs).unwrap();
     // whole-value refs resolve to JSON numbers (decode into i32).
     assert_eq!(v, json!({ "tags": [3, 5] }));
+}
+
+#[test]
+fn resolve_refs_string_id_becomes_string() {
+    // GUID/string-id APIs (Jellyfin): a whole-value ref resolves to a JSON
+    // string, keeping the FK's native wire type.
+    let mut v = json!({ "userId": "${ref.user.alice}" });
+    let refs = StrRefs(
+        [(
+            ("user".to_string(), "alice".to_string()),
+            "a1b2c3d4-e5f6".to_string(),
+        )]
+        .into(),
+    );
+    resolve::resolve_refs(&mut v, &refs).unwrap();
+    assert_eq!(v, json!({ "userId": "a1b2c3d4-e5f6" }));
 }
 
 #[test]

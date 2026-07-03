@@ -27,6 +27,7 @@ members = [
     "crates/sonarr-v3",
     "crates/prowlarr-v1",
     "crates/lidarr-v1",
+    "crates/jellyfin-v11",
     "crates/service-registry",
     "crates/core-config",
     "crates/core-cli",

@@ -33,7 +33,7 @@ pub fn encode<T: Described>(value: &T) -> anyhow::Result<Value> {
             let mut entry = Map::new();
             entry.insert(
                 "name".to_string(),
-                Value::String(standard::wire_key(f.name, f.wire_name)),
+                Value::String(standard::wire_key(f.name, f.wire_name, desc.case)),
             );
             entry.insert("value".to_string(), v);
             fields.push(Value::Object(entry));
@@ -69,8 +69,9 @@ pub fn decode<T: Described>(value: &Value) -> anyhow::Result<T> {
     }
 
     let mut out = T::empty();
-    for f in T::descriptor().fields {
-        let key = standard::wire_key(f.name, f.wire_name);
+    let desc = T::descriptor();
+    for f in desc.fields {
+        let key = standard::wire_key(f.name, f.wire_name, desc.case);
         let Some(jv) = by_name.get(key.as_str()) else {
             continue;
         };

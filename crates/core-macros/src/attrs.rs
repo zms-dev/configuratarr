@@ -18,6 +18,13 @@ pub struct ResourceArgs {
     /// Write strategy. Required, always explicit — see [`SyncSpec`].
     pub sync: SyncSpec,
 
+    /// Wire-key casing for fields without an explicit `#[wire(name)]`. Defaults
+    /// to `camel` (snake→camelCase, the *arr shape). `pascal` upper-cases the
+    /// first character too (PascalCase) — for .NET-style APIs like Jellyfin
+    /// whose default JSON serialisation is PascalCase.
+    #[darling(default)]
+    pub case: CaseSpec,
+
     /// HTTP operations, each `op = verb("/path")`. Method is always explicit;
     /// path may carry `${self.*}` / `${ref.*}`. The strategy decides which are
     /// required.
@@ -31,6 +38,50 @@ pub struct ResourceArgs {
     pub update: Option<EndpointSpec>,
     #[darling(default)]
     pub delete: Option<EndpointSpec>,
+}
+
+/// `#[nested(...)]` arguments. A bare `#[nested]` parses to the default.
+#[derive(Debug, Default, FromMeta)]
+pub struct NestedArgs {
+    /// Wire-key casing — see [`ResourceArgs::case`].
+    #[darling(default)]
+    pub case: CaseSpec,
+}
+
+/// Wire-key casing strategy for fields lacking an explicit `#[wire(name)]`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum CaseSpec {
+    /// snake→camelCase (the *arr default).
+    #[default]
+    Camel,
+    /// snake→PascalCase (camelCase with the first character upper-cased).
+    Pascal,
+}
+
+impl FromMeta for CaseSpec {
+    fn from_string(value: &str) -> darling::Result<Self> {
+        match value {
+            "camel" => Ok(Self::Camel),
+            "pascal" => Ok(Self::Pascal),
+            other => Err(darling::Error::custom(format!(
+                "unknown case `{other}` — expected camel / pascal"
+            ))),
+        }
+    }
+
+    fn from_expr(expr: &syn::Expr) -> darling::Result<Self> {
+        match expr {
+            syn::Expr::Path(p) => match p.path.get_ident() {
+                Some(id) => Self::from_string(&id.to_string()),
+                None => Err(darling::Error::custom("expected a bare case ident").with_span(expr)),
+            },
+            syn::Expr::Lit(syn::ExprLit {
+                lit: syn::Lit::Str(s),
+                ..
+            }) => Self::from_string(&s.value()),
+            _ => Err(darling::Error::custom("case must be one of: camel / pascal").with_span(expr)),
+        }
+    }
 }
 
 /// One `op = verb("/path")` endpoint parsed from a `#[resource]` attribute.
@@ -108,14 +159,13 @@ impl FromMeta for EndpointSpec {
     }
 }
 
-/// Write-strategy selector parsed from `sync = crud | bulk_replace | singleton`.
+/// Write-strategy selector parsed from `sync = crud | singleton | custom`.
 ///
 /// Accepts a bare ident (`sync = crud`) or a string (`sync = "crud"`). Maps
 /// 1:1 onto `core_lib::SyncKind`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SyncSpec {
     Crud,
-    BulkReplace,
     Singleton,
     Custom,
 }
@@ -124,11 +174,10 @@ impl FromMeta for SyncSpec {
     fn from_string(value: &str) -> darling::Result<Self> {
         match value {
             "crud" => Ok(Self::Crud),
-            "bulk_replace" => Ok(Self::BulkReplace),
             "singleton" => Ok(Self::Singleton),
             "custom" => Ok(Self::Custom),
             other => Err(darling::Error::custom(format!(
-                "unknown sync strategy `{other}` — expected crud / bulk_replace / singleton / custom"
+                "unknown sync strategy `{other}` — expected crud / singleton / custom"
             ))),
         }
     }
@@ -145,10 +194,10 @@ impl FromMeta for SyncSpec {
                 lit: syn::Lit::Str(s),
                 ..
             }) => Self::from_string(&s.value()),
-            _ => Err(darling::Error::custom(
-                "sync must be one of: crud / bulk_replace / singleton",
-            )
-            .with_span(expr)),
+            _ => Err(
+                darling::Error::custom("sync must be one of: crud / singleton / custom")
+                    .with_span(expr),
+            ),
         }
     }
 }

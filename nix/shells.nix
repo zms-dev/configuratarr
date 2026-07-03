@@ -40,6 +40,7 @@ let
       prowlarr
       lidarr
       readarr
+      jellyfin
     ];
     shellHook = ''
       echo "=== Configuratarr E2E DevShell ==="
@@ -65,6 +66,11 @@ in
   };
 
   e2e-lidarr = import ./e2e-shells/lidarr-v1.nix {
+    inherit pkgs;
+    e2eShell = e2e;
+  };
+
+  e2e-jellyfin = import ./e2e-shells/jellyfin-v11.nix {
     inherit pkgs;
     e2eShell = e2e;
   };
