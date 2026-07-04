@@ -212,8 +212,10 @@ impl crate::resolver::RefSource for RefStore {
     }
 }
 
-/// Build an HTTP client from a service's connection bundle.
-pub fn connect(conn: &Connection<'_>) -> anyhow::Result<HttpClient> {
+/// Build an HTTP client from a service's connection bundle. Async because the
+/// form/cookie scheme performs a login round-trip before the client is usable;
+/// the header schemes just stamp a default header and return immediately.
+pub async fn connect(conn: &Connection<'_>) -> anyhow::Result<HttpClient> {
     let mut b = HttpClient::builder(conn.url.clone());
     if conn.insecure == Some(true) {
         b = b.insecure();
@@ -240,11 +242,29 @@ pub fn connect(conn: &Connection<'_>) -> anyhow::Result<HttpClient> {
                 SecretString::new(format!("Basic {creds}").into()),
             )
         }
-        Auth::FormCookie { .. } => {
-            anyhow::bail!("form-cookie auth not yet supported by the executor")
-        }
+        // Form/cookie auth keeps a session cookie rather than a header; enable
+        // the cookie store now and log in below once the client exists.
+        Auth::FormCookie { .. } => b.cookies(),
     };
-    b.build()
+    let client = b.build()?;
+
+    // Establish the session before returning, so every later request carries the
+    // cookie. The credentials POST as the conventional `username`/`password` form
+    // fields; a non-2xx login surfaces here (like a bad api key would).
+    if let Auth::FormCookie {
+        login_path,
+        user,
+        pass,
+    } = &conn.auth
+    {
+        let pairs = vec![
+            ("username".to_string(), user.to_string()),
+            ("password".to_string(), pass.expose().to_string()),
+        ];
+        client.login_form(login_path, &pairs).await?;
+    }
+
+    Ok(client)
 }
 
 /// Poll the service's declared `health` endpoint until it responds OK, or
@@ -256,7 +276,7 @@ pub async fn wait_healthy<S: Service>(svc: &S, timeout: Duration) -> anyhow::Res
     let Some(path) = S::descriptor().health_check else {
         return Ok(());
     };
-    let client = connect(&svc.connection())?;
+    let client = connect(&svc.connection()).await?;
     let interval = Duration::from_secs(2);
     let deadline = Instant::now() + timeout;
     loop {
@@ -308,7 +328,7 @@ async fn run<S: Service>(
     opts: ApplyOptions,
     execute: bool,
 ) -> anyhow::Result<Plan> {
-    let client = connect(&svc.connection())?;
+    let client = connect(&svc.connection()).await?;
     let fields = S::descriptor().fields;
     let mut refs = RefStore::default();
     let mut steps = Vec::new();
@@ -531,10 +551,10 @@ async fn run_ops(
                     let resp = send(client, endpoint.method, endpoint.path, Some(body)).await?;
                     resp.get("id")
                         .and_then(RefId::from_value)
-                        .unwrap_or(RefId::Int(-1))
+                        .unwrap_or(RefId::Pending)
                 } else {
-                    // Preview: the id is server-assigned, so use a placeholder.
-                    RefId::Int(-1)
+                    // Preview: the id is server-assigned, so it stays pending.
+                    RefId::Pending
                 };
                 refs.insert(tn, key, id);
             }

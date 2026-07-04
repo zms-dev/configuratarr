@@ -31,8 +31,13 @@ codec/           standard, fields_blob, tagged_by_impl, string_enum, config; Cod
 engine.rs        encode/decode/decode_config dispatch; key_wire_name, reference_targets,
                  secret_wire_keys, field_docs/resource_docs (doc-gen)
 resolve.rs       ${env}/${file}/${ref}/${self} on the Value tree (one `substitute` primitive)
-resolver.rs      StaticEnv / RefSource traits + SystemEnv; RefId (Int(i64)|Str) — the bounded ref id
+resolver.rs      StaticEnv / RefSource traits + SystemEnv; RefId (Int(i64)|Str|Pending) — the
+                 bounded ref id; Pending = a not-yet-created id (preview / id-less create response),
+                 substitutes as RefId::PENDING (-1)
 apply.rs         (…executor…) + CustomSync trait / CustomSyncFn — the `sync = custom` hook seam
+reconcile.rs     reconcile primitives for custom hooks: present_keys, create_only (keyed
+                 create-or-leave), replace (whole-list structural replace) — each owns the
+                 execute-gate + Change emission so a hook can't write during a preview
 merge.rs         sparse-update merge (live ⊕ desired; fields[] by name)
 plan.rs          Plan/PlanStep/Op/FieldChange/Report + DisplayValue + render()
 apply.rs         plan()/apply()/run() executor; topo order; RefStore; connect/auth
@@ -89,8 +94,16 @@ PUT body = `merge(live, desired)`: live base, desired wins, omitted keys keep li
 ## Seams
 
 **Built (extend, don't reinvent):**
-- **String/GUID ids** — the ref id is [`resolver::RefId`] (`Int(i64)|Str`); `RefStore`/`RefSource` are keyed by it, resolve substitutes `RefId::to_value()`. *arr stay `Int`.
-- **`SyncKind::Custom(CustomSyncFn)`** — the hook is carried by the variant (no separate descriptor field); `apply::custom_step` dispatches to a hand-written async reconcile hook for APIs that don't fit crud/singleton (multi-endpoint, query-keyed identity, server-gen ids). The hook returns `Vec<Change>` (Created/Updated/Unchanged + safe display rows) and the engine builds the report `Op`s — so hooks never touch the plan model or leak a raw body, **but** the hook owns its own HTTP/ordering/idempotency and must honour `execute`. Recurring hook shapes live in the *service* crate (e.g. jellyfin `resources/custom.rs`), not core. Whole-list "replace" APIs (e.g. Jellyfin `/Repositories`) are a custom hook, not a dedicated sync kind.
+- **String/GUID ids** — the ref id is [`resolver::RefId`] (`Int(i64)|Str|Pending`); `RefStore`/`RefSource` are keyed by it, resolve substitutes `RefId::to_value()`. *arr stay `Int`. `Pending` is the not-yet-created id (a `plan` preview, or a create whose response carried no id) — it substitutes as `RefId::PENDING` (`-1`); use it, never a bare `-1`.
+- **`SyncKind::Custom(CustomSyncFn)`** — the hook is carried by the variant (no separate descriptor field); `apply::custom_step` dispatches to a hand-written async reconcile hook for APIs that don't fit crud/singleton (multi-endpoint, query-keyed identity, server-gen ids). The hook returns `Vec<Change>` (Created/Updated/Unchanged + safe display rows) and the engine builds the report `Op`s — so hooks never touch the plan model or leak a raw body, **but** the hook owns its own HTTP/ordering/idempotency and must honour `execute`. **Don't hand-roll the recurring mechanics** — the `core::reconcile` primitives (`present_keys`, `create_only` = keyed create-or-leave, `replace` = whole-list structural replace) own the execute-gate + `Change` emission so a hook can't accidentally write during a preview; a hook supplies only its service-specific diff/write. Only genuinely bespoke flows (multi-endpoint per item like jellyfin `user`, sparse form singletons like bazarr `settings`) keep an explicit `if execute` — and even those live in the *service* crate, not core.
 - **PascalCase codec** — `case = pascal` (see Codecs).
+- **Form/cookie auth** — `auth = form_cookie(login_path=…, username=…, password=…)`. `apply::connect` builds a cookie-store client, POSTs `username`/`password` as a form to `login_path`, and the session cookie rides every request. (Bearer/api-key/basic remain header schemes; OAuth2 still open.)
 
-**Still open (build when a service demands):** async `AuthScheme`/`Authenticator` traits (Basic/FormCookie/OAuth2 bail today); fanned update (`update: Option<Endpoint>` → slice); pagination; normalization-before-diff.
+**Still open (build when a service demands):** async `AuthScheme`/`Authenticator` traits (OAuth2 bails today; `Basic` is a header, `FormCookie` is wired); fanned update (`update: Option<Endpoint>` → slice); pagination; normalization-before-diff.
+
+## Non-*arr service shapes (deliberate divergences)
+
+Two patterns that look like slop but are intentional — mirror the reasoning, don't "fix" them:
+
+- **One endpoint, many sections (bazarr).** A service whose entire config is a single endpoint (`/api/system/settings`) is modelled as a `sync = custom` singleton whose fields are `Option<Section>` (present = manage, absent = leave). Sibling concerns that write the *same* endpoint (bazarr `languages`) can be a second custom resource — the shared write is fine, they don't `#[reference]` each other. The "resource = a REST collection with CRUD identity" model is a polite fiction here; that's expected for config-blob APIs.
+- **Typed sections vs open blob — the closed/open rule.** Enumerate typed structs (bazarr's 33 provider sections) when the key set is **closed and worth documenting** — you get per-field docs + validation, at the cost of one file per section. Use an open `#[fields_map]` `Json` blob (prowlarr Cardigann `RawProvider`) when the key set is **open/dynamic** and can't be enumerated. Pick by the API's nature, not by file count.

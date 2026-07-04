@@ -89,7 +89,7 @@ impl CustomSync for User {
                     None => {
                         if !execute {
                             // Preview: no create, so no real id — record intent.
-                            refs.insert("user", name, RefId::Int(-1));
+                            refs.insert("user", name, RefId::Pending);
                             changes.push(Change::created(name));
                             continue;
                         }

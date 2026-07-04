@@ -60,15 +60,29 @@ impl StaticEnv for SystemEnv {
 /// `String` for GUID/string-id APIs (Jellyfin). This bounded type is what the
 /// engine stores and substitutes into `${ref.*}` — an id is only ever an int or
 /// a string, never a bool/array/object, so garbage is rejected at the boundary.
+///
+/// [`Pending`](RefId::Pending) is not a server id: it marks a create that hasn't
+/// happened yet (a `plan` preview, or an `apply` create whose response carried no
+/// id). It substitutes into `${ref.*}` as the [`PENDING`](Self::PENDING)
+/// placeholder so preview encoding still succeeds; a real `apply` never leaves a
+/// ref `Pending` once the dependency has actually been created.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum RefId {
     Int(i64),
     Str(String),
+    /// A not-yet-created id (preview, or a create with no id in its response).
+    Pending,
 }
 
 impl RefId {
+    /// The integer stand-in a [`Pending`](RefId::Pending) ref resolves to in a
+    /// preview — the historical `-1` placeholder, kept in one place so no call
+    /// site has to spell the sentinel.
+    pub const PENDING: i64 = -1;
+
     /// Read an id out of a live/create response value (`Number` or `String`);
-    /// `None` for anything else (or a null/absent field).
+    /// `None` for anything else (or a null/absent field). Never yields
+    /// [`Pending`](RefId::Pending) — that is engine-internal, not a wire value.
     pub fn from_value(v: &serde_json::Value) -> Option<Self> {
         match v {
             serde_json::Value::Number(n) => n.as_i64().map(RefId::Int),
@@ -78,11 +92,13 @@ impl RefId {
     }
 
     /// The id as the JSON value substituted into a `${ref.*}` position, keeping
-    /// its native wire type.
+    /// its native wire type. [`Pending`](RefId::Pending) renders as the
+    /// [`PENDING`](Self::PENDING) placeholder.
     pub fn to_value(&self) -> serde_json::Value {
         match self {
             RefId::Int(i) => serde_json::Value::from(*i),
             RefId::Str(s) => serde_json::Value::String(s.clone()),
+            RefId::Pending => serde_json::Value::from(Self::PENDING),
         }
     }
 }

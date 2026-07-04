@@ -6,11 +6,10 @@
 //! declared `app` that isn't present yet (create-or-leave; no prune, mirroring
 //! the *arr "don't delete what you didn't make" caution).
 
+use core_lib::reconcile;
 use core_lib::{CustomSync, CustomSyncFuture, HttpClient, RefStore};
 use core_macros::resource;
 use serde_json::Value;
-
-use crate::resources::custom;
 
 /// `/Auth/Keys` — an API key issued to an application name.
 #[resource(sync = custom, list = get("/Auth/Keys"))]
@@ -30,7 +29,7 @@ impl CustomSync for AuthKey {
         Box::pin(async move {
             // Live keys come back as `{ Items: [{ AppName, AccessToken, ... }] }`.
             let live: Value = client.get("/Auth/Keys").await?;
-            let present = custom::live_keys(
+            let present = reconcile::present_keys(
                 live.get("Items")
                     .and_then(Value::as_array)
                     .map(Vec::as_slice)
@@ -38,7 +37,7 @@ impl CustomSync for AuthKey {
                 "AppName",
             );
             let client = client.clone();
-            custom::reconcile_create_only(desired, "app", &present, execute, move |app, _cfg| {
+            reconcile::create_only(desired, "app", &present, execute, move |app, _cfg| {
                 let client = client.clone();
                 // The key is issued via a query param; the body is ignored.
                 async move {

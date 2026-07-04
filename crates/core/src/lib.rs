@@ -14,6 +14,7 @@ pub mod field;
 pub mod form;
 pub mod merge;
 pub mod plan;
+pub mod reconcile;
 pub mod refs;
 pub mod resolve;
 pub mod resolver;

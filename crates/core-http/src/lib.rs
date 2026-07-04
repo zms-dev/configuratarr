@@ -18,6 +18,7 @@ pub struct HttpClientBuilder {
     headers: Vec<(&'static str, SecretString)>,
     timeout: Duration,
     insecure: bool,
+    cookies: bool,
 }
 
 impl HttpClient {
@@ -27,7 +28,26 @@ impl HttpClient {
             headers: Vec::new(),
             timeout: Duration::from_secs(30),
             insecure: false,
+            cookies: false,
         }
+    }
+
+    /// Establish a form/cookie session: POST `pairs` as an
+    /// `application/x-www-form-urlencoded` body to `login_path`, so the server's
+    /// `Set-Cookie` session lands in this client's cookie store and rides every
+    /// subsequent request. The client must have been built with
+    /// [`HttpClientBuilder::cookies`] for the cookie to be retained. Non-2xx →
+    /// error (surfaces bad credentials at connect time, like the header auths).
+    pub async fn login_form(&self, login_path: &str, pairs: &[(String, String)]) -> Result<()> {
+        let url = format!("{}{}", self.base_url, login_path);
+        let resp = self
+            .inner
+            .post(&url)
+            .form(pairs)
+            .send()
+            .await
+            .with_context(|| format!("POST(login) {url}"))?;
+        self.check_status(resp, &url).await
     }
 
     pub async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
@@ -261,6 +281,14 @@ impl HttpClientBuilder {
         self
     }
 
+    /// Enable an in-memory cookie store, so a session cookie set by
+    /// [`HttpClient::login_form`] is retained and sent on later requests. Off by
+    /// default — only form/cookie-auth services need it.
+    pub fn cookies(mut self) -> Self {
+        self.cookies = true;
+        self
+    }
+
     pub fn build(self) -> Result<HttpClient> {
         let mut headers = HeaderMap::new();
         for (name, value) in &self.headers {
@@ -275,6 +303,7 @@ impl HttpClientBuilder {
         let inner = reqwest::Client::builder()
             .timeout(self.timeout)
             .default_headers(headers)
+            .cookie_store(self.cookies)
             .use_preconfigured_tls(tls_config(self.insecure))
             .build()
             .context("building HTTP client")?;

@@ -111,9 +111,9 @@ pub enum Auth<'a> {
         pass: &'a SecretValue,
     },
 
-    /// Form/cookie auth: POST credentials to `login_path`, reuse the session
-    /// cookie. The handshake lands with the future `AuthScheme` trait; the
-    /// variant exists so the data shape already covers it.
+    /// Form/cookie auth: [`connect`](crate::apply::connect) POSTs the
+    /// credentials as an `username`/`password` form to `login_path`, and the
+    /// client's cookie store reuses the returned session for every request.
     FormCookie {
         login_path: &'static str,
         user: &'a String,

@@ -5,11 +5,10 @@
 //! custom` resource. The reconcile hook creates any declared library that isn't
 //! present yet (create-or-leave; no prune, no path reconcile in this MVP).
 
+use core_lib::reconcile;
 use core_lib::{CustomSync, CustomSyncFuture, HttpClient, RefStore};
 use core_macros::resource;
 use serde_json::{Value, json};
-
-use crate::resources::custom;
 
 /// `/Library/VirtualFolders` — a media library (name + collection type + paths).
 #[resource(sync = custom, list = get("/Library/VirtualFolders"))]
@@ -32,9 +31,9 @@ impl CustomSync for Library {
     ) -> CustomSyncFuture<'a> {
         Box::pin(async move {
             let live: Vec<Value> = client.get("/Library/VirtualFolders").await?;
-            let present = custom::live_keys(&live, "Name");
+            let present = reconcile::present_keys(&live, "Name");
             let client = client.clone();
-            custom::reconcile_create_only(desired, "name", &present, execute, move |name, cfg| {
+            reconcile::create_only(desired, "name", &present, execute, move |name, cfg| {
                 let client = client.clone();
                 async move {
                     // Identity + paths go in the query string;

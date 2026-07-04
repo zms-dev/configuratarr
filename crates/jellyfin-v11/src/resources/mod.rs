@@ -13,9 +13,7 @@ pub mod path_substitution;
 pub mod repository_info;
 pub mod trickplay_options;
 
-// custom-sync resources (shared helper + the hooks)
-pub mod custom;
-
+// custom-sync resources (reconcile shapes come from `core_lib::reconcile`)
 pub mod auth_key;
 pub mod library;
 pub mod repository;

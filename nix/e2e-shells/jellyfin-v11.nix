@@ -50,9 +50,14 @@ pkgs.mkShell {
 
       curl -sf -X POST "http://localhost:8096/Auth/Keys?app=configuratarr" \
         -H "Authorization: MediaBrowser Token=\"$_JF_TOKEN\"" > /dev/null
+      # `select` matches every `configuratarr` key, and Jellyfin mints a fresh one
+      # each entry (plus the auth_key e2e creates more) — so this can emit several
+      # lines. Take exactly one: a multi-line value becomes an invalid
+      # (newline-bearing) HTTP header and fails the health check.
       _JF_KEY=$(curl -sf http://localhost:8096/Auth/Keys \
         -H "Authorization: MediaBrowser Token=\"$_JF_TOKEN\"" \
-        | jq -r '.Items[] | select(.AppName=="configuratarr") | .AccessToken')
+        | jq -r '.Items[] | select(.AppName=="configuratarr") | .AccessToken' \
+        | head -n1)
 
       export JELLYFIN_URL="http://localhost:8096"
       export JELLYFIN_API_KEY="$_JF_KEY"

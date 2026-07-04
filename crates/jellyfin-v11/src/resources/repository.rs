@@ -6,7 +6,8 @@
 //! **structural** (by the repo's own fields), not serialization-based, so it
 //! doesn't depend on JSON key ordering.
 
-use core_lib::{Change, CustomSync, CustomSyncFuture, HttpClient, RefStore, engine};
+use core_lib::reconcile;
+use core_lib::{CustomSync, CustomSyncFuture, HttpClient, RefStore, engine};
 use core_macros::resource;
 use serde_json::Value;
 
@@ -21,27 +22,20 @@ pub struct Repository {
     pub enabled: bool,
 }
 
-/// Order-insensitive identity of the repo set: sorted `(Name, Url, Enabled)`
-/// tuples. Structural, so it doesn't rely on JSON key ordering.
-fn repo_set(items: &[Value]) -> Vec<(String, String, bool)> {
-    let mut v: Vec<_> = items
-        .iter()
-        .map(|i| {
-            (
-                i.get("Name")
-                    .and_then(Value::as_str)
-                    .unwrap_or("")
-                    .to_string(),
-                i.get("Url")
-                    .and_then(Value::as_str)
-                    .unwrap_or("")
-                    .to_string(),
-                i.get("Enabled").and_then(Value::as_bool).unwrap_or(false),
-            )
-        })
-        .collect();
-    v.sort();
-    v
+/// Order-insensitive identity of one repo: `(Name, Url, Enabled)`. Structural,
+/// so the set comparison in [`reconcile::replace`] ignores JSON key ordering.
+fn repo_identity(i: &Value) -> (String, String, bool) {
+    (
+        i.get("Name")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string(),
+        i.get("Url")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string(),
+        i.get("Enabled").and_then(Value::as_bool).unwrap_or(false),
+    )
 }
 
 impl CustomSync for Repository {
@@ -60,13 +54,22 @@ impl CustomSync for Repository {
                 .map(|cfg| engine::encode(&engine::decode_config::<Self>(cfg)?))
                 .collect::<anyhow::Result<_>>()?;
 
-            if repo_set(&live) == repo_set(&wire) {
-                return Ok(vec![Change::unchanged("repositories")]);
-            }
-            if execute {
-                let _: Value = client.post("/Repositories", &Value::Array(wire)).await?;
-            }
-            Ok(vec![Change::updated("repositories")])
+            // Whole-list replace: `reconcile::replace` owns the set diff + the
+            // preview gate; this hook only supplies the identity and the write.
+            let to_post = wire.clone();
+            let client = client.clone();
+            reconcile::replace(
+                &wire,
+                &live,
+                "repositories",
+                execute,
+                repo_identity,
+                move || async move {
+                    let _: Value = client.post("/Repositories", &Value::Array(to_post)).await?;
+                    Ok(())
+                },
+            )
+            .await
         })
     }
 }
