@@ -29,6 +29,7 @@ members = [
     "crates/lidarr-v1",
     "crates/jellyfin-v11",
     "crates/bazarr-v1",
+    "crates/autobrr-v1",
     "crates/service-registry",
     "crates/core-config",
     "crates/core-cli",

@@ -1,0 +1,7 @@
+name: discord-releases
+notification_type: DISCORD
+enabled: true
+events:
+  - PUSH_APPROVED
+  - PUSH_REJECTED
+webhook: https://discord.com/api/webhooks/123/abc

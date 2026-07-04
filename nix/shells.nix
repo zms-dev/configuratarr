@@ -79,4 +79,9 @@ in
     inherit pkgs;
     e2eShell = e2e;
   };
+
+  e2e-autobrr = import ./e2e-shells/autobrr-v1.nix {
+    inherit pkgs;
+    e2eShell = e2e;
+  };
 }

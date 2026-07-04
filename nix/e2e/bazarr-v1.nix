@@ -25,10 +25,14 @@ pkgs.testers.nixosTest {
       "grep -qsE 'apikey' /var/lib/bazarr/config/config.yaml /var/lib/bazarr/config/config.ini",
       timeout=120,
     )
+    # bazarr writes only one of config.yaml / config.ini; grep exits 2 on the
+    # absent one, which fails under the test shell's `pipefail` even though the
+    # key was matched. Swallow that with `|| true` (an empty result still fails
+    # loudly at the X-API-KEY curl below); `-m1` stops at the first match.
     api_key = machine.succeed(
-      "grep -hoE 'apikey[:=] *[A-Za-z0-9]+' "
+      "{ grep -hoE -m1 'apikey[:=] *[A-Za-z0-9]+' "
       "/var/lib/bazarr/config/config.yaml /var/lib/bazarr/config/config.ini 2>/dev/null "
-      "| head -n1 | grep -oE '[A-Za-z0-9]+$'"
+      "|| true; } | grep -oE '[A-Za-z0-9]+$'"
     ).strip()
 
     # The API answers once bazarr is fully up (authenticated by the key).

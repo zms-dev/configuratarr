@@ -32,6 +32,7 @@ macro_rules! service_registry {
             LidarrV1 => "lidarr-v1" : lidarr_v1::LidarrV1 = "Lidarr v1",
             JellyfinV11 => "jellyfin-v11" : jellyfin_v11::JellyfinV11 = "Jellyfin v11",
             BazarrV1 => "bazarr-v1" : bazarr_v1::BazarrV1 = "Bazarr v1",
+            AutobrrV1 => "autobrr-v1" : autobrr_v1::AutobrrV1 = "Autobrr v1",
         }
     };
 }

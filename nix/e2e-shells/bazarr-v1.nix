@@ -16,9 +16,11 @@ pkgs.mkShell {
     _BZ_PID=$!
 
     _bz_key() {
-      grep -hoE 'apikey[:=] *[A-Za-z0-9]+' \
+      # Only one of config.yaml/config.ini exists; grep exits 2 on the absent
+      # one. Swallow it with `|| true` so the pipeline stays clean under pipefail.
+      { grep -hoE -m1 'apikey[:=] *[A-Za-z0-9]+' \
         "$_BZ_DATA/config/config.yaml" "$_BZ_DATA/config/config.ini" 2>/dev/null \
-        | head -n1 | grep -oE '[A-Za-z0-9]+$'
+        || true; } | grep -oE '[A-Za-z0-9]+$'
     }
 
     _bz_wait() {

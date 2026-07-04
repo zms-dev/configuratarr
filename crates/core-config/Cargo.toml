@@ -12,15 +12,17 @@ prowlarr-v1 = { path = "../prowlarr-v1", optional = true }
 lidarr-v1 = { path = "../lidarr-v1", optional = true }
 jellyfin-v11 = { path = "../jellyfin-v11", optional = true }
 bazarr-v1 = { path = "../bazarr-v1", optional = true }
+autobrr-v1 = { path = "../autobrr-v1", optional = true }
 anyhow.workspace       = true
 serde_json.workspace   = true
 serde-saphyr.workspace = true
 
 [features]
-default     = ["radarr-v3", "sonarr-v3", "prowlarr-v1", "lidarr-v1", "jellyfin-v11", "bazarr-v1"]
+default     = ["radarr-v3", "sonarr-v3", "prowlarr-v1", "lidarr-v1", "jellyfin-v11", "bazarr-v1", "autobrr-v1"]
 radarr-v3   = ["dep:radarr-v3"]
 sonarr-v3   = ["dep:sonarr-v3"]
 prowlarr-v1 = ["dep:prowlarr-v1"]
 lidarr-v1   = ["dep:lidarr-v1"]
 jellyfin-v11 = ["dep:jellyfin-v11"]
 bazarr-v1   = ["dep:bazarr-v1"]
+autobrr-v1  = ["dep:autobrr-v1"]
