@@ -31,6 +31,7 @@ macro_rules! service_registry {
             ProwlarrV1 => "prowlarr-v1" : prowlarr_v1::ProwlarrV1 = "Prowlarr v1",
             LidarrV1 => "lidarr-v1" : lidarr_v1::LidarrV1 = "Lidarr v1",
             JellyfinV11 => "jellyfin-v11" : jellyfin_v11::JellyfinV11 = "Jellyfin v11",
+            BazarrV1 => "bazarr-v1" : bazarr_v1::BazarrV1 = "Bazarr v1",
         }
     };
 }

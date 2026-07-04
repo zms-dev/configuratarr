@@ -274,6 +274,7 @@ fn case_tokens(spec: CaseSpec) -> TokenStream {
     match spec {
         CaseSpec::Camel => quote!(::core_lib::Case::Camel),
         CaseSpec::Pascal => quote!(::core_lib::Case::Pascal),
+        CaseSpec::Snake => quote!(::core_lib::Case::Snake),
     }
 }
 
@@ -412,6 +413,23 @@ fn emit_struct_fields(
             _ => quote!(None),
         };
 
+        // For a nested single object (`Nested` / `Option<Nested>`), emit the
+        // inner type's presence-masked config→wire so `present_to_wire` recurses.
+        // `Vec<Nested>` is excluded — a list has no per-element presence mask.
+        let nested_present_tok: TokenStream = match &kind {
+            Kind::Nested { .. } => {
+                let inner = &f.ty;
+                quote!(Some(|v| ::core_lib::engine::config_present_to_wire::<#inner>(v)))
+            }
+            Kind::OptNested { .. } => match inner_generic(&f.ty) {
+                Some(inner) => {
+                    quote!(Some(|v| ::core_lib::engine::config_present_to_wire::<#inner>(v)))
+                }
+                None => quote!(None),
+            },
+            _ => quote!(None),
+        };
+
         out.push(quote! {
             ::core_lib::FieldDescriptor::<#struct_ident> {
                 name: #name_str,
@@ -426,6 +444,7 @@ fn emit_struct_fields(
                 fields_map: #fields_map_tok,
                 reference: #reference_tok,
                 nested_docs: #nested_docs_tok,
+                nested_present: #nested_present_tok,
                 get: |t| { #get_tok },
                 set: |t, v| { #set_tok },
             }

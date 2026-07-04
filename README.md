@@ -20,11 +20,14 @@ Reads a desired-state YAML file, diffs it against each app's live REST API, and 
 | Lidarr | v1 | `lidarr-v1` | ✅ Supported |
 | Prowlarr | v1 | `prowlarr-v1` | ✅ Supported |
 | Jellyfin | v10.11 | `jellyfin-v11` | ✅ Supported (server config) |
+| Bazarr | v1 | `bazarr-v1` | ✅ Supported (settings) |
 | Readarr | — | — | 🚧 Planned |
 
 Jellyfin currently covers the server config singletons (system, network, encoding, metadata, branding); users, libraries, and API keys need engine work for string/GUID ids and custom multi-endpoint sync, and are staged next.
 
-More of the ecosystem (Bazarr, Jellyseerr, …) is on the radar. The engine is service-agnostic — adding one is filling in a template, not changing the core. See [`docs/contributors.md`](docs/contributors.md).
+Bazarr has no per-resource CRUD config surface — its entire configuration is one endpoint (`/api/system/settings`) with a form-encoded write, modelled as a single `sync = custom` singleton: the config-meaningful sections (general, sonarr, radarr, jellyfin, proxy, backup, auth, plex, subsync) plus language profiles and the enabled-language set. The md5-hashed `auth.password` is diffed by hashing the declared value, so it stays idempotent. All 32 subtitle providers are typed (one struct each under `resources/providers/`), so their credentials are documented and validated.
+
+More of the ecosystem (Jellyseerr, …) is on the radar. The engine is service-agnostic — adding one is filling in a template, not changing the core. See [`docs/contributors.md`](docs/contributors.md).
 
 ---
 

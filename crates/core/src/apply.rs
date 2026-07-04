@@ -417,8 +417,13 @@ async fn custom_step<S: Service>(
     execute: bool,
 ) -> anyhow::Result<Option<PlanStep>> {
     let tn = field.type_name;
-    let Some(cfgs) = instance.get(field.name).and_then(Value::as_array).cloned() else {
-        return Ok(None);
+    // A custom resource is `Vec<R>` (array config) or `Option<R>` (a *custom
+    // singleton* — one object config). Normalise the singleton object to a
+    // one-element list so the hook always sees `&[Value]`; absent/null = unmanaged.
+    let cfgs: Vec<Value> = match instance.get(field.name) {
+        None | Some(Value::Null) => return Ok(None),
+        Some(Value::Array(a)) => a.clone(),
+        Some(obj) => vec![obj.clone()],
     };
 
     let desired = resolve_all(&cfgs, refs, Ok)?;

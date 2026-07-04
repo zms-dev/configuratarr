@@ -55,6 +55,24 @@ impl HttpClient {
         self.parse_write(resp, &url).await
     }
 
+    /// POST an `application/x-www-form-urlencoded` body. Unlike [`Self::post`]
+    /// (JSON), the body is a slice of `(name, value)` pairs so **repeated keys**
+    /// survive (form semantics: e.g. bazarr's `languages-enabled` appears once
+    /// per language). The seam for services whose write contract is a flat form
+    /// blob rather than JSON (bazarr's `system/settings`). Response handled like
+    /// any other write (see [`Self::parse_write`]).
+    pub async fn post_form(&self, path: &str, pairs: &[(String, String)]) -> Result<Value> {
+        let url = format!("{}{}", self.base_url, path);
+        let resp = self
+            .inner
+            .post(&url)
+            .form(pairs)
+            .send()
+            .await
+            .with_context(|| format!("POST(form) {url}"))?;
+        self.parse_write(resp, &url).await
+    }
+
     /// PUT a JSON body. See [`Self::post`].
     pub async fn put<B: Serialize>(&self, path: &str, body: &B) -> Result<Value> {
         let url = format!("{}{}", self.base_url, path);

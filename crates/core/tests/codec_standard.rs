@@ -91,3 +91,24 @@ fn camelcase_skips_and_secret() {
         })
     );
 }
+
+/// `case = snake` — the wire key is the field name verbatim (for APIs whose JSON
+/// is snake_case, e.g. bazarr), not camelCased.
+#[resource(sync = singleton, case = snake, read = get("/s"), update = put("/s"))]
+pub struct SnakeCfg {
+    pub use_sonarr: bool,
+    pub minimum_score: i32,
+}
+
+#[test]
+fn snake_case_keeps_field_names_verbatim() {
+    let c = SnakeCfg {
+        use_sonarr: true,
+        minimum_score: 90,
+    };
+    let v = engine::encode(&c).unwrap();
+    assert_eq!(
+        v,
+        serde_json::json!({ "use_sonarr": true, "minimum_score": 90 })
+    );
+}

@@ -31,6 +31,7 @@ in
         "prowlarr.service"
         "lidarr.service"
         "jellyfin.service"
+        "bazarr.service"
       ];
 
       serviceConfig = {

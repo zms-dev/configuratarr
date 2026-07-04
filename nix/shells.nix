@@ -74,4 +74,9 @@ in
     inherit pkgs;
     e2eShell = e2e;
   };
+
+  e2e-bazarr = import ./e2e-shells/bazarr-v1.nix {
+    inherit pkgs;
+    e2eShell = e2e;
+  };
 }

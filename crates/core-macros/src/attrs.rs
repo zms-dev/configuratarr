@@ -56,6 +56,8 @@ pub enum CaseSpec {
     Camel,
     /// snake→PascalCase (camelCase with the first character upper-cased).
     Pascal,
+    /// Identity — the wire key is the snake field name (bazarr).
+    Snake,
 }
 
 impl FromMeta for CaseSpec {
@@ -63,8 +65,9 @@ impl FromMeta for CaseSpec {
         match value {
             "camel" => Ok(Self::Camel),
             "pascal" => Ok(Self::Pascal),
+            "snake" => Ok(Self::Snake),
             other => Err(darling::Error::custom(format!(
-                "unknown case `{other}` — expected camel / pascal"
+                "unknown case `{other}` — expected camel / pascal / snake"
             ))),
         }
     }
@@ -79,7 +82,10 @@ impl FromMeta for CaseSpec {
                 lit: syn::Lit::Str(s),
                 ..
             }) => Self::from_string(&s.value()),
-            _ => Err(darling::Error::custom("case must be one of: camel / pascal").with_span(expr)),
+            _ => Err(
+                darling::Error::custom("case must be one of: camel / pascal / snake")
+                    .with_span(expr),
+            ),
         }
     }
 }

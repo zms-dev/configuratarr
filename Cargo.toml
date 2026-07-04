@@ -28,6 +28,7 @@ members = [
     "crates/prowlarr-v1",
     "crates/lidarr-v1",
     "crates/jellyfin-v11",
+    "crates/bazarr-v1",
     "crates/service-registry",
     "crates/core-config",
     "crates/core-cli",
@@ -42,7 +43,7 @@ anyhow             = "1.0"
 # (use_preconfigured_tls) built with the ring provider + bundled webpki roots.
 # Avoids aws-lc/cmake and rustls-platform-verifier's OS-trust-store read (which
 # fails in the CA-less nix build sandbox). See core-http.
-reqwest            = { version = "0.13", default-features = false, features = ["json", "rustls-no-provider"] }
+reqwest            = { version = "0.13", default-features = false, features = ["json", "form", "rustls-no-provider"] }
 rustls             = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 webpki-roots       = "1"
 tokio              = { version = "1", features = ["full"] }
@@ -52,6 +53,7 @@ serde-saphyr       = "0.0.28"
 secrecy            = { version = "0.10.3", features = ["serde"] }
 zeroize            = "1.8"
 base64             = "0.22"
+md-5               = "0.10"
 owo-colors         = { version = "4.3.0", features = ["supports-colors"] }
 tracing            = "0.1"
 tracing-subscriber = "0.3"

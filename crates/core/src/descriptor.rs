@@ -7,11 +7,14 @@ use crate::field::{FieldRef, FieldRole, FieldValue};
 
 /// Default wire-key casing for fields without an explicit `#[wire(name)]`.
 /// `Camel` is snake→camelCase (the *arr shape); `Pascal` upper-cases the first
-/// character too, for .NET-style APIs (Jellyfin) whose JSON is PascalCase.
+/// character too, for .NET-style APIs (Jellyfin) whose JSON is PascalCase;
+/// `Snake` is identity — the wire key *is* the snake field name (bazarr, whose
+/// settings JSON is snake_case).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Case {
     Camel,
     Pascal,
+    Snake,
 }
 
 /// An HTTP verb, always declared explicitly at the `#[resource]` site (no
@@ -181,6 +184,13 @@ pub struct FieldDescriptor<T: 'static> {
     /// provider for the inner type's docs — so doc-gen can render its section
     /// even when the value is absent in an `empty()` instance. `None` otherwise.
     pub nested_docs: Option<fn() -> crate::engine::ResourceDoc>,
+
+    /// For a nested single-object field (`Nested` / `Option<Nested>`), the inner
+    /// type's presence-masked config→wire, so `present_to_wire` masks the nested
+    /// object to the keys the user actually wrote (not the whole struct with type
+    /// defaults). Without it, presence masking would only apply one level deep.
+    /// `None` for scalars and `Vec<Nested>`.
+    pub nested_present: Option<fn(&serde_json::Value) -> anyhow::Result<serde_json::Value>>,
 
     /// Read the field's current value as a borrowed [`FieldRef`].
     pub get: fn(&T) -> FieldRef<'_>,

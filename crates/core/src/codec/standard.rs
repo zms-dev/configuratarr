@@ -159,14 +159,17 @@ fn num_f64(x: f64) -> anyhow::Result<Value> {
         .ok_or_else(|| anyhow::anyhow!("non-finite float cannot be encoded as JSON: {x}"))
 }
 
-/// Wire key: explicit `wire_name` override, else snake_case cased per the
-/// resource's [`Case`] — camelCase (default) or PascalCase (.NET-style APIs).
+/// Wire key: explicit `wire_name` override, else the field name cased per the
+/// resource's [`Case`] — camelCase (default), PascalCase (.NET-style APIs), or
+/// Snake (identity — the field name is already the wire key).
 pub(crate) fn wire_key(name: &str, wire_name: Option<&str>, case: Case) -> String {
     match wire_name {
         Some(w) => w.to_string(),
         None => match case {
             Case::Camel => to_camel_case(name),
             Case::Pascal => to_pascal_case(name),
+            // Identity: the wire key is the snake field name (bazarr).
+            Case::Snake => name.to_string(),
         },
     }
 }

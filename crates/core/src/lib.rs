@@ -11,6 +11,7 @@ pub mod described;
 pub mod descriptor;
 pub mod engine;
 pub mod field;
+pub mod form;
 pub mod merge;
 pub mod plan;
 pub mod refs;
