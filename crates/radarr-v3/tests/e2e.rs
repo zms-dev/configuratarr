@@ -218,3 +218,59 @@ async fn download_client_resolves_tag_ref() {
     let _ = run(&url, &key, json!({ "download_clients": [] }), prune).await;
     let _ = run(&url, &key, json!({ "tags": [] }), prune).await;
 }
+
+/// A MediaBrowser (Emby/Jellyfin) notification whose `api_key` is a `SecretValue`
+/// in the fields-blob. Regression guard for issue #31: the secret's plaintext
+/// must reach the wire under the field name Radarr expects (`apiKey`, which
+/// `api_key` camelCases to — an earlier `#[wire(name = "aPIKey")]` override sent
+/// it under a key Radarr ignored, so `ApiKey` arrived empty).
+///
+/// Radarr validates the provider fields *before* it live-tests the connection,
+/// so a missing/empty secret fails with `'Api Key' must not be empty`, while a
+/// secret that reached the wire clears field validation and only then fails on
+/// the unreachable dummy host. We therefore assert the apply error (if any) is
+/// **not** the empty-ApiKey one — a connection failure to `localhost:8096` is
+/// the expected, healthy outcome without a real Emby to point at.
+#[tokio::test]
+#[ignore]
+async fn notification_secret_field_reaches_wire() {
+    let Some((url, key)) = env() else { return };
+    let cfg = json!({ "notifications": [ {
+        "name": "e2e-configuratarr-emby",
+        "implementation": "MediaBrowser",
+        "host": "localhost",
+        "port": 8096,
+        "api_key": "e2econfiguratarrsecretkey0000",
+        "notify": false,
+        "update_library": true,
+        "on_download": true,
+        "on_upgrade": true,
+        "on_rename": true,
+        "tags": []
+    } ] });
+
+    let (svc, value) = instance::<RadarrV3>(&url, &key, cfg);
+    wait_healthy(&svc, Duration::from_secs(30))
+        .await
+        .expect("radarr healthy");
+    let outcome = apply(&svc, &value, ApplyOptions::default()).await;
+
+    if let Err(e) = &outcome {
+        let msg = format!("{e:#}");
+        assert!(
+            !msg.contains("Api Key") && !msg.contains("ApiKey"),
+            "secret did not reach the wire — Radarr rejected the ApiKey: {msg}"
+        );
+        // Any other error (e.g. connection refused to the dummy Emby host) is
+        // fine: field validation passed, proving the secret was on the wire.
+    }
+
+    // cleanup (best-effort: the create above may or may not have persisted).
+    let _ = run(
+        &url,
+        &key,
+        json!({ "notifications": [] }),
+        ApplyOptions { prune: true },
+    )
+    .await;
+}

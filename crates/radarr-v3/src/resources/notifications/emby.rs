@@ -12,7 +12,6 @@ pub struct EmbyConfig {
     /// Emby server HTTP port.
     pub port: i32,
     /// Emby API key for authentication.
-    #[wire(name = "aPIKey")]
     pub api_key: SecretValue,
     /// Connect to Emby over HTTPS.
     pub use_ssl: Option<bool>,

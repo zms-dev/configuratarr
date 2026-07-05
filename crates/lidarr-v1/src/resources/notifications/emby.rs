@@ -10,7 +10,6 @@ pub struct EmbyConfig {
     /// Emby server hostname or IP address.
     pub host: String,
     /// Emby API key for authentication.
-    #[wire(name = "aPIKey")]
     pub api_key: SecretValue,
     /// Emby server HTTP port.
     pub port: Option<i32>,
