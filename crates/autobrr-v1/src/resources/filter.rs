@@ -142,7 +142,7 @@ fn create_body(wire: &Value) -> Value {
 /// default (autobrr returns unset lists as `null`/absent and unset scalars as
 /// `""`). Treated as always in-sync, since the typed `Vec`/`Option` fields can't
 /// distinguish "declared empty" from "omitted".
-fn is_empty(v: &Value) -> bool {
+pub(crate) fn is_empty(v: &Value) -> bool {
     match v {
         Value::Null => true,
         Value::String(s) => s.is_empty(),
@@ -155,7 +155,7 @@ fn is_empty(v: &Value) -> bool {
 /// an empty declared value is always satisfied; objects match key-by-key on
 /// `want`'s keys (extra `have` keys — e.g. server ids — ignored); arrays match
 /// element-wise; scalars compare numeric-insensitively.
-fn is_subset(want: &Value, have: &Value) -> bool {
+pub(crate) fn is_subset(want: &Value, have: &Value) -> bool {
     if is_empty(want) {
         return true;
     }

@@ -12,8 +12,11 @@
 //! Runtime assumptions validated here:
 //!   1. auth — the API key is accepted in the `X-API-Token` header;
 //!   2. casing — autobrr serialises/accepts snake_case JSON;
-//!   3. the two custom seams — `create_only` (api keys, notifications) and the
-//!      `filter` two-step create (POST subset → PATCH full) — are idempotent.
+//!   3. the custom seams are idempotent — `create_only` (api keys,
+//!      notifications), the `filter` two-step create (POST subset → PATCH full),
+//!      the `indexer` create/update (base id on create, stored id on update), and
+//!      the `irc_network` structural-subset diff;
+//!   4. `proxy` crud round-trips and prunes.
 
 use std::time::Duration;
 
@@ -131,4 +134,110 @@ async fn filter_two_step_create_idempotent() {
     assert_eq!(second.created, 0);
     assert_eq!(second.updated, 0, "second filter apply should be a no-op");
     assert_eq!(second.unchanged, 1);
+}
+
+/// Proxy crud: created, then a repeated apply is a no-op (no secret sent, so the
+/// merge is stable), then pruned via DELETE.
+#[tokio::test]
+#[ignore]
+async fn proxy_crud_idempotent_prune() {
+    let Some((url, key)) = env() else { return };
+    let cfg = json!({ "proxies": [{
+        "name": "cfg-e2e-proxy",
+        "enabled": true,
+        "proxy_type": "SOCKS5",
+        "addr": "socks5://127.0.0.1:1080",
+    }] });
+    // First apply may create or reconcile pre-existing state; the invariant is
+    // that a *repeated* apply is a no-op (no secret sent → stable merge).
+    run(&url, &key, cfg.clone(), ApplyOptions::default()).await;
+    let second = run(&url, &key, cfg, ApplyOptions::default()).await;
+    assert_eq!(second.created, 0, "second proxy apply creates nothing");
+    assert_eq!(
+        second.updated, 0,
+        "second proxy apply is a no-op: {second:?}"
+    );
+
+    let pruned = run(
+        &url,
+        &key,
+        json!({ "proxies": [] }),
+        ApplyOptions { prune: true },
+    )
+    .await;
+    assert!(pruned.deleted >= 1, "proxy pruned: {pruned:?}");
+}
+
+/// Indexer custom sync: created, idempotent, then a toggled `enabled` drives an
+/// update — which must echo the *server-stored* identifier (`torznab-<name>`);
+/// sending the base id 500s. Regression guard for that update path.
+#[tokio::test]
+#[ignore]
+async fn indexer_create_update_idempotent() {
+    let Some((url, key)) = env() else { return };
+    let mk = |enabled: bool| {
+        json!({ "indexers": [{
+        "name": "cfg-e2e-tz",
+        "identifier": "torznab",
+        "implementation": "torznab",
+        "enabled": enabled,
+        "settings": { "url": "https://tracker.example.org/t", "api_key": "K" },
+    }] })
+    };
+
+    // Settle to enabled=true (create or reconcile pre-existing), then a repeated
+    // apply must be a no-op.
+    run(&url, &key, mk(true), ApplyOptions::default()).await;
+    let second = run(&url, &key, mk(true), ApplyOptions::default()).await;
+    assert_eq!(second.created, 0);
+    assert_eq!(
+        second.unchanged, 1,
+        "second indexer apply is a no-op: {second:?}"
+    );
+
+    // Toggle enabled → update via the stored identifier (the 500-prone path).
+    let updated = run(&url, &key, mk(false), ApplyOptions::default()).await;
+    assert_eq!(updated.updated, 1, "indexer updated: {updated:?}");
+    let settled = run(&url, &key, mk(false), ApplyOptions::default()).await;
+    assert_eq!(
+        settled.unchanged, 1,
+        "update settles to unchanged: {settled:?}"
+    );
+}
+
+/// IRC network custom sync: the structural-subset diff makes a repeated apply a
+/// no-op despite server-enriched `channels[]` + runtime fields; a toggled
+/// `enabled` drives a `PUT /api/irc/network/{id}` update.
+#[tokio::test]
+#[ignore]
+async fn irc_network_create_update_idempotent() {
+    let Some((url, key)) = env() else { return };
+    let mk = |enabled: bool| {
+        json!({ "irc_networks": [{
+        "name": "cfg-e2e-net",
+        "enabled": enabled,
+        "server": "irc.example.org",
+        "port": 6697,
+        "tls": true,
+        "nick": "cfg-e2e-bot",
+        "channels": [{ "name": "#announce" }],
+    }] })
+    };
+    // Settle (create or reconcile pre-existing), then a repeated apply is a no-op.
+    run(&url, &key, mk(true), ApplyOptions::default()).await;
+    let second = run(&url, &key, mk(true), ApplyOptions::default()).await;
+    assert_eq!(second.created, 0, "second irc apply creates nothing");
+    assert_eq!(
+        second.unchanged, 1,
+        "second irc apply is a no-op: {second:?}"
+    );
+
+    // Toggle enabled → update via /api/irc/network/{id}.
+    let updated = run(&url, &key, mk(false), ApplyOptions::default()).await;
+    assert_eq!(updated.updated, 1, "irc network updated: {updated:?}");
+    let settled = run(&url, &key, mk(false), ApplyOptions::default()).await;
+    assert_eq!(
+        settled.unchanged, 1,
+        "update settles to unchanged: {settled:?}"
+    );
 }

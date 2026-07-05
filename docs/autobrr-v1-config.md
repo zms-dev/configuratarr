@@ -39,6 +39,20 @@ Autobrr v1 — desired-state config for one instance.
 | `topic` | string | no |  | Topic (ntfy and similar). |
 | `host` | string | no |  | Provider host (self-hosted Gotify/ntfy). |
 
+### Proxy
+
+`/api/proxy` — a proxy autobrr can route indexer/IRC traffic through.
+
+| Field | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `name` | string | yes |  | Display name — its identity (`${ref.proxy.<name>}`). |
+| `enabled` | boolean | yes |  | Whether the proxy is active. |
+| `proxy_type` | string | yes |  | Proxy kind: `SOCKS5` or `HTTP`. |
+| `addr` | string | yes |  | Proxy URL, including scheme (e.g. `socks5://127.0.0.1:1080`). |
+| `user` | string | no |  | Username, where the proxy authenticates. |
+| `pass` | secret string | no |  | Password, where the proxy authenticates. Credential — redacted in plan output. |
+| `timeout` | integer | no |  | Connection timeout in seconds (`0` = client default). |
+
 ### Download Client
 
 `/api/download_clients` — a download client autobrr pushes releases to.
@@ -55,6 +69,41 @@ Autobrr v1 — desired-state config for one instance.
 | `username` | string | no |  | Username, where the client authenticates by user/pass. |
 | `password` | secret string | no |  | Password, where the client authenticates by user/pass. Credential — redacted in plan output. |
 | `settings` | [`download_client_settings`](#download-client-settings) | no |  | Client-specific settings (auth, rules, delegation). |
+
+### Indexer
+
+`/api/indexer` — a configured indexer instance.
+
+| Field | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `name` | string | yes |  | Display name — its identity (`${ref.indexer.<name>}`). |
+| `identifier` | string | yes |  | Definition id to instantiate (e.g. `torznab`, `beyond-hd`). Sent verbatim on create; autobrr namespaces the stored value per instance. |
+| `implementation` | string | yes |  | Definition implementation: `torznab`, `newznab`, `rss`, or `irc`. |
+| `enabled` | boolean | no | `true` | Whether the indexer is active. |
+| `settings` | any | yes |  | Definition settings as a flat `name: value` map (e.g. `{ url: "...", api_key: "..." }`). Write-only — never returned on read. |
+
+### Irc Network
+
+`/api/irc` — an IRC network with its channels and auth.
+
+| Field | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `name` | string | yes |  | Network name — its identity (`${ref.irc_network.<name>}`). |
+| `enabled` | boolean | yes |  | Whether autobrr connects to this network. |
+| `server` | string | yes |  | IRC server hostname. |
+| `port` | integer | yes |  | IRC server port. |
+| `tls` | boolean | no |  | Connect over TLS. |
+| `tls_skip_verify` | boolean | no |  | Skip TLS certificate verification. |
+| `nick` | string | yes |  | Bot nick to use on the network. |
+| `pass` | secret string | no |  | Server password (PASS), where required (write-only). Credential — redacted in plan output. |
+| `auth` | [`irc_auth`](#irc-auth) | no |  | NickServ / SASL authentication. |
+| `invite_command` | string | no |  | Command sent to request an invite (e.g. `/msg gatekeeper !invite`). |
+| `use_bouncer` | boolean | no |  | Connect through a bouncer instead of directly. |
+| `bouncer_addr` | string | no |  | Bouncer address, where `use_bouncer` is set. |
+| `bot_mode` | boolean | no |  | Enable IRCv3 bot mode. |
+| `use_proxy` | boolean | no |  | Route this network through a proxy. |
+| `proxy_id` | integer | no |  | Proxy to route through (`${ref.proxy.<name>}`). References a [`proxy`](#proxy) by name (`${ref.proxy.<key>}`). |
+| `channels` | array of [`irc_channel`](#irc-channel) | no |  | Channels to join. |
 
 ### Filter
 
@@ -117,6 +166,21 @@ Allowed values: `PUSH_APPROVED` / `PUSH_REJECTED` / `PUSH_ERROR` / `IRC_DISCONNE
 | `basic` | [`download_client_basic`](#download-client-basic) | no |  | HTTP basic-auth credentials, if the client's endpoint is protected. |
 | `rules` | [`download_client_rules`](#download-client-rules) | no |  | Throughput/queue rules applied before pushing releases. |
 | `external_download_client_id` | integer | no |  | Id of another download client to delegate to (proxy setups). |
+
+### Irc Auth
+
+| Field | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `mechanism` | string | no |  | Auth mechanism: `NONE`, `SASL_PLAIN`, or `NICKSERV`. |
+| `account` | string | no |  | Account / login name. |
+| `password` | secret string | no |  | Account password (write-only; returned `<redacted>` on read). Credential — redacted in plan output. |
+
+### Irc Channel
+
+| Field | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `name` | string | yes |  | Channel name (e.g. `#announce`). |
+| `password` | secret string | no |  | Channel key/password, where the channel is protected (write-only). Credential — redacted in plan output. |
 
 ### Filter Indexer
 

@@ -13,7 +13,10 @@ use core_macros::service;
 use crate::resources::api_key::ApiKey;
 use crate::resources::download_client::DownloadClient;
 use crate::resources::filter::Filter;
+use crate::resources::indexer::Indexer;
+use crate::resources::irc_network::IrcNetwork;
 use crate::resources::notification::Notification;
+use crate::resources::proxy::Proxy;
 
 /// Autobrr v1 — desired-state config for one instance.
 #[service(
@@ -34,8 +37,14 @@ pub struct AutobrrV1 {
     pub api_keys: Vec<ApiKey>,
     /// Notification targets (create-only).
     pub notifications: Vec<Notification>,
+    /// Proxies (SOCKS5/HTTP) for indexers and IRC.
+    pub proxies: Vec<Proxy>,
     /// Download clients.
     pub download_clients: Vec<DownloadClient>,
+    /// Indexers (create + update by name; no prune).
+    pub indexers: Vec<Indexer>,
+    /// IRC networks and their channels (create + update by name; no prune).
+    pub irc_networks: Vec<IrcNetwork>,
     /// Release-matching filters.
     pub filters: Vec<Filter>,
 }

@@ -24,12 +24,6 @@ Reads a desired-state YAML file, diffs it against each app's live REST API, and 
 | Autobrr | v1 | `autobrr-v1` | ✅ Supported |
 | Readarr | — | — | 🚧 Planned |
 
-Jellyfin currently covers the server config singletons (system, network, encoding, metadata, branding); users, libraries, and API keys need engine work for string/GUID ids and custom multi-endpoint sync, and are staged next.
-
-Bazarr has no per-resource CRUD config surface — its entire configuration is one endpoint (`/api/system/settings`) with a form-encoded write, modelled as a single `sync = custom` singleton: the config-meaningful sections (general, sonarr, radarr, jellyfin, proxy, backup, auth, plex, subsync) plus language profiles and the enabled-language set. The md5-hashed `auth.password` is diffed by hashing the declared value, so it stays idempotent. All 32 subtitle providers are typed (one struct each under `resources/providers/`), so their credentials are documented and validated.
-
-Autobrr (snake_case JSON, `X-API-Token` header auth) manages `download_clients` (create/update; autobrr exposes no delete), `api_keys` and `notifications` (create-only), and `filters` — the flagship. autobrr creates a filter in two steps (POST a small subset, then PATCH the full config), so `filters` is a `sync = custom` hook that owns the two-step create and a structural change-check; indexers, feeds, and IRC networks are read-only + toggle-only upstream and aren't managed. autobrr's own app config isn't modelled — it writes `config.toml`, which is read-only under the NixOS `services.autobrr` module (set it via `services.autobrr.settings`).
-
 More of the ecosystem (Jellyseerr, …) is on the radar. The engine is service-agnostic — adding one is filling in a template, not changing the core. See [`docs/contributors.md`](docs/contributors.md).
 
 ---

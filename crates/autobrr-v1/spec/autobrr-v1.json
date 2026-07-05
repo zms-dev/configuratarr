@@ -272,6 +272,19 @@
           "indexer_id": { "type": "integer" }
         }
       },
+      "Proxy": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "name": { "type": "string" },
+          "enabled": { "type": "boolean" },
+          "type": { "type": "string" },
+          "addr": { "type": "string" },
+          "user": { "type": "string" },
+          "pass": { "type": "string" },
+          "timeout": { "type": "integer" }
+        }
+      },
       "DownloadClientBasic": {
         "type": "object",
         "properties": {

@@ -39,18 +39,36 @@ conformance!(
     "testdata/notification/config.yaml"
 );
 
-// crud collection (+ nested settings)
+// crud collections
 conformance!(
     download_client,
     resources::download_client::DownloadClient,
     "DownloadClient",
     "testdata/download_client/config.yaml"
 );
+conformance!(
+    proxy,
+    resources::proxy::Proxy,
+    "Proxy",
+    "testdata/proxy/config.yaml"
+);
+conformance!(
+    irc_network,
+    resources::irc_network::IrcNetwork,
+    "IrcNetwork",
+    "testdata/irc_network/config.yaml"
+);
 
-// custom two-step (+ nested actions / indexers / external)
+// custom-sync resources (two-step create / server-rewritten identifier)
 conformance!(
     filter,
     resources::filter::Filter,
     "Filter",
     "testdata/filter/config.yaml"
+);
+conformance!(
+    indexer,
+    resources::indexer::Indexer,
+    "Indexer",
+    "testdata/indexer/config.yaml"
 );
