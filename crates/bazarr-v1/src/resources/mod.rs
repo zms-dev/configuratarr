@@ -19,11 +19,16 @@ pub mod auth;
 pub mod backup;
 pub mod general;
 pub mod jellyfin;
+pub mod log;
+pub mod movie_scores;
 pub mod plex;
+pub mod postgresql;
 pub mod proxy;
 pub mod radarr;
+pub mod series_scores;
 pub mod sonarr;
 pub mod subsync;
+pub mod translator;
 
 // subtitle providers (one struct per provider, under providers/)
 pub mod providers;

@@ -27,4 +27,16 @@ pub struct Subsync {
     pub gss: Option<bool>,
     /// Maximum allowed offset, in seconds.
     pub max_offset_seconds: Option<i32>,
+    /// Post-sync quality checker: languages/providers excluded from the sync
+    /// verification pass.
+    pub checker: Option<SubsyncChecker>,
+}
+
+/// Subsync post-sync checker settings (`settings-subsync-checker-*`).
+#[nested(case = snake)]
+pub struct SubsyncChecker {
+    /// Language codes excluded from the post-sync quality check.
+    pub blacklisted_languages: Vec<String>,
+    /// Provider ids excluded from the post-sync quality check.
+    pub blacklisted_providers: Vec<String>,
 }

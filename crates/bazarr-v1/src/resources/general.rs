@@ -66,4 +66,14 @@ pub struct General {
     pub wanted_search_frequency_movie: Option<i32>,
     /// Languages treated as equal to one another (`from:to` rules).
     pub language_equals: Vec<String>,
+    /// Automatically assign a default language profile to newly-tracked series.
+    pub serie_default_enabled: Option<bool>,
+    /// Language-profile id (as a string) assigned to new series when
+    /// `serie_default_enabled` is set. References a `language_profiles` entry.
+    pub serie_default_profile: Option<String>,
+    /// Automatically assign a default language profile to newly-tracked movies.
+    pub movie_default_enabled: Option<bool>,
+    /// Language-profile id (as a string) assigned to new movies when
+    /// `movie_default_enabled` is set. References a `language_profiles` entry.
+    pub movie_default_profile: Option<String>,
 }

@@ -151,7 +151,7 @@ async fn auth_password_apply_is_idempotent() {
     let cfg = json!({
         "settings": {
             "auth": {
-                "type": "form",
+                "kind": "form",
                 "username": "admin",
                 "password": "configuratarre2e",
             }
@@ -170,6 +170,48 @@ async fn auth_password_apply_is_idempotent() {
             ..Report::default()
         },
         "re-applying an identical auth password must be idempotent"
+    );
+}
+
+/// The newly-modelled sections round-trip: a flat section (`movie_scores`), the
+/// `general` default-profile toggles, and — the novel wire shape — `subsync.checker`,
+/// a nested object *inside* a section (flattened to `settings-subsync-checker-*`
+/// form keys). Applying then re-applying is a pure no-op, proving all three
+/// encode/read shapes match bazarr's contract.
+#[tokio::test]
+#[ignore]
+async fn extended_sections_apply_is_idempotent() {
+    let Some((url, key)) = env() else { return };
+    let cfg = json!({
+        "settings": {
+            "general": {
+                "serie_default_enabled": false,
+                "movie_default_enabled": false,
+            },
+            "movie_scores": {
+                "hash": 119,
+                "title": 60,
+                "year": 30,
+            },
+            "subsync": {
+                "checker": {
+                    "blacklisted_languages": [],
+                    "blacklisted_providers": ["podnapisi"],
+                }
+            },
+        }
+    });
+
+    run(&url, &key, cfg.clone(), ApplyOptions::default()).await;
+
+    let report = run(&url, &key, cfg, ApplyOptions::default()).await;
+    assert_eq!(
+        report,
+        Report {
+            unchanged: 1,
+            ..Report::default()
+        },
+        "re-applying the extended sections must be idempotent"
     );
 }
 

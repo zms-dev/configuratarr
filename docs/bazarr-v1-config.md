@@ -30,6 +30,11 @@ bazarr's JSON keys are the snake field names verbatim; each section is
 | `subsync` | [`subsync`](#subsync) | no |  | Subtitle synchronisation. |
 | `auth` | [`auth`](#auth) | no |  | Web-UI authentication. |
 | `plex` | [`plex`](#plex) | no |  | Plex integration. |
+| `postgresql` | [`postgresql`](#postgresql) | no |  | PostgreSQL backend. |
+| `translator` | [`translator`](#translator) | no |  | Machine-translation engine. |
+| `log` | [`log`](#log) | no |  | Log filtering. |
+| `movie_scores` | [`movie_scores`](#movie-scores) | no |  | Movie subtitle-match scoring weights. |
+| `series_scores` | [`series_scores`](#series-scores) | no |  | Series subtitle-match scoring weights. |
 | `addic7ed` | [`addic7ed`](#addic7ed) | no |  | Addic7ed provider settings. |
 | `anidb` | [`ani_db`](#ani-db) | no |  | AniDB provider settings. |
 | `animetosho` | [`anime_tosho`](#anime-tosho) | no |  | AnimeTosho provider settings. |
@@ -110,6 +115,10 @@ Enabled subtitle languages + the language-profile set, reconciled together
 | `wanted_search_frequency` | integer | no |  | Wanted-search frequency for series, in hours. |
 | `wanted_search_frequency_movie` | integer | no |  | Wanted-search frequency for movies, in hours. |
 | `language_equals` | array of string | no |  | Languages treated as equal to one another (`from:to` rules). |
+| `serie_default_enabled` | boolean | no |  | Automatically assign a default language profile to newly-tracked series. |
+| `serie_default_profile` | string | no |  | Language-profile id (as a string) assigned to new series when `serie_default_enabled` is set. References a `language_profiles` entry. |
+| `movie_default_enabled` | boolean | no |  | Automatically assign a default language profile to newly-tracked movies. |
+| `movie_default_profile` | string | no |  | Language-profile id (as a string) assigned to new movies when `movie_default_enabled` is set. References a `language_profiles` entry. |
 
 ### Sonarr
 
@@ -172,6 +181,7 @@ Enabled subtitle languages + the language-profile set, reconciled together
 
 | Field | Type | Required | Default | Description |
 |---|---|---|---|---|
+| `kind` | string | no |  | Proxy type: `socks5` / `http`, or unset to disable. Declare it as `kind:` under `proxy:` — it maps to bazarr's `type` key (`type` is a Rust keyword, so the field is named `kind`). |
 | `url` | string | no |  | Proxy host. |
 | `port` | string | no |  | Proxy port. |
 | `username` | string | no |  | Proxy username. |
@@ -204,11 +214,13 @@ Enabled subtitle languages + the language-profile set, reconciled together
 | `no_fix_framerate` | boolean | no |  | Don't correct the subtitle framerate. |
 | `gss` | boolean | no |  | Use the golden-section search algorithm. |
 | `max_offset_seconds` | integer | no |  | Maximum allowed offset, in seconds. |
+| `checker` | [`subsync_checker`](#subsync-checker) | no |  | Post-sync quality checker: languages/providers excluded from the sync verification pass. |
 
 ### Auth
 
 | Field | Type | Required | Default | Description |
 |---|---|---|---|---|
+| `kind` | string | no |  | Authentication method: unset = none, `basic`, or `form`. Declare it as `kind:` under `auth:` — it maps to bazarr's `type` key (`type` is a Rust keyword, so the field is named `kind`). |
 | `username` | string | no |  | Login username. |
 | `password` | string | no |  | Login password (sent in plaintext; bazarr stores it md5-hashed). |
 
@@ -228,6 +240,72 @@ Enabled subtitle languages + the language-profile set, reconciled together
 | `series_library_ids` | array of string | no |  | Series library ids to refresh. |
 | `set_movie_added` | boolean | no |  | Set the "added" date on movies from the subtitle date. |
 | `set_episode_added` | boolean | no |  | Set the "added" date on episodes from the subtitle date. |
+
+### Postgresql
+
+| Field | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `enabled` | boolean | no |  | Use PostgreSQL instead of the bundled SQLite database. |
+| `host` | string | no |  | PostgreSQL host. |
+| `port` | integer | no |  | PostgreSQL port. |
+| `database` | string | no |  | Database name. |
+| `username` | string | no |  | Database username. |
+| `password` | string | no |  | Database password. |
+| `url` | string | no |  | Full connection URL (overrides the discrete host/port/… fields). |
+
+### Translator
+
+| Field | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `translator_type` | string | no |  | Translation engine (`google_translate`, `gemini`, `lingarr`, …). |
+| `default_score` | integer | no |  | Minimum score a translated subtitle must reach to be kept. |
+| `translator_info` | boolean | no |  | Show translation info/attribution in the UI. |
+| `gemini_key` | string | no |  | Google Gemini API key (used when `translator_type` is `gemini`). |
+| `gemini_model` | string | no |  | Gemini model id (e.g. `gemini-2.0-flash`). |
+| `lingarr_url` | string | no |  | Lingarr base URL (used when `translator_type` is `lingarr`). |
+| `lingarr_token` | string | no |  | Lingarr API token. |
+
+### Log
+
+| Field | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `include_filter` | string | no |  | Only keep log lines matching this filter. |
+| `exclude_filter` | string | no |  | Drop log lines matching this filter. |
+| `use_regex` | boolean | no |  | Treat the filters as regular expressions. |
+| `ignore_case` | boolean | no |  | Match the filters case-insensitively. |
+
+### Movie Scores
+
+| Field | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `hash` | integer | no |  | Points for a release-hash match (exact file match). |
+| `title` | integer | no |  | Points for a matching title. |
+| `year` | integer | no |  | Points for a matching year. |
+| `release_group` | integer | no |  | Points for a matching release group. |
+| `source` | integer | no |  | Points for a matching source (BluRay, WEB-DL, …). |
+| `resolution` | integer | no |  | Points for a matching resolution. |
+| `video_codec` | integer | no |  | Points for a matching video codec. |
+| `audio_codec` | integer | no |  | Points for a matching audio codec. |
+| `edition` | integer | no |  | Points for a matching edition. |
+| `streaming_service` | integer | no |  | Points for a matching streaming service. |
+| `hearing_impaired` | integer | no |  | Points for a matching hearing-impaired flag. |
+
+### Series Scores
+
+| Field | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `hash` | integer | no |  | Points for a release-hash match (exact file match). |
+| `series` | integer | no |  | Points for a matching series title. |
+| `year` | integer | no |  | Points for a matching year. |
+| `season` | integer | no |  | Points for a matching season number. |
+| `episode` | integer | no |  | Points for a matching episode number. |
+| `release_group` | integer | no |  | Points for a matching release group. |
+| `source` | integer | no |  | Points for a matching source (BluRay, WEB-DL, …). |
+| `resolution` | integer | no |  | Points for a matching resolution. |
+| `video_codec` | integer | no |  | Points for a matching video codec. |
+| `audio_codec` | integer | no |  | Points for a matching audio codec. |
+| `streaming_service` | integer | no |  | Points for a matching streaming service. |
+| `hearing_impaired` | integer | no |  | Points for a matching hearing-impaired flag. |
 
 ### Addic7ed
 
@@ -476,6 +554,13 @@ Enabled subtitle languages + the language-profile set, reconciled together
 | `must_not_contain` | array of string | no |  | Release must contain none of these strings. |
 | `original_format` | boolean | no |  | Prefer the original-format subtitle. |
 | `tag` | string | no |  | Sonarr/Radarr tag this profile is scoped to. |
+
+### Subsync Checker
+
+| Field | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `blacklisted_languages` | array of string | no |  | Language codes excluded from the post-sync quality check. |
+| `blacklisted_providers` | array of string | no |  | Provider ids excluded from the post-sync quality check. |
 
 ### Language Profile Item
 

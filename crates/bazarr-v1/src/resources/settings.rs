@@ -32,7 +32,10 @@ use crate::resources::auth::Auth;
 use crate::resources::backup::Backup;
 use crate::resources::general::General;
 use crate::resources::jellyfin::Jellyfin;
+use crate::resources::log::Log;
+use crate::resources::movie_scores::MovieScores;
 use crate::resources::plex::Plex;
+use crate::resources::postgresql::Postgresql;
 use crate::resources::providers::addic7ed::Addic7ed;
 use crate::resources::providers::anidb::AniDb;
 use crate::resources::providers::animetosho::AnimeTosho;
@@ -67,8 +70,10 @@ use crate::resources::providers::whisperai::WhisperAi;
 use crate::resources::providers::xsubs::XSubs;
 use crate::resources::proxy::Proxy;
 use crate::resources::radarr::Radarr;
+use crate::resources::series_scores::SeriesScores;
 use crate::resources::sonarr::Sonarr;
 use crate::resources::subsync::Subsync;
+use crate::resources::translator::Translator;
 
 const SETTINGS_PATH: &str = "/api/system/settings";
 
@@ -95,6 +100,16 @@ pub struct Settings {
     pub auth: Option<Auth>,
     /// Plex integration.
     pub plex: Option<Plex>,
+    /// PostgreSQL backend.
+    pub postgresql: Option<Postgresql>,
+    /// Machine-translation engine.
+    pub translator: Option<Translator>,
+    /// Log filtering.
+    pub log: Option<Log>,
+    /// Movie subtitle-match scoring weights.
+    pub movie_scores: Option<MovieScores>,
+    /// Series subtitle-match scoring weights.
+    pub series_scores: Option<SeriesScores>,
     /// Addic7ed provider settings.
     pub addic7ed: Option<Addic7ed>,
     /// AniDB provider settings.

@@ -1,12 +1,13 @@
 use core_macros::nested;
 
 /// Outbound proxy settings (`settings-proxy-*`).
-///
-/// The proxy `type` (`socks5` / `http`, or unset to disable) is also settable —
-/// declare it as `type:` under `proxy:`; it is forwarded verbatim (it is not a
-/// struct field here only because `type` is a Rust keyword).
 #[nested(case = snake)]
 pub struct Proxy {
+    /// Proxy type: `socks5` / `http`, or unset to disable. Declare it as `kind:`
+    /// under `proxy:` — it maps to bazarr's `type` key (`type` is a Rust keyword,
+    /// so the field is named `kind`).
+    #[wire(name = "type")]
+    pub kind: Option<String>,
     /// Proxy host.
     pub url: Option<String>,
     /// Proxy port.
