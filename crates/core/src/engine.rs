@@ -68,22 +68,43 @@ pub fn key_wire_name<T: Described>() -> Option<String> {
 /// fields aren't reachable (the vec is empty) — a known, rare gap.
 pub fn reference_targets<T: Described>() -> Vec<&'static str> {
     let mut out = Vec::new();
-    collect_reference_targets(T::empty().descriptor_erased(), &mut out);
+    let mut seen = Vec::new();
+    collect_reference_targets(&resource_docs::<T>(), &mut out, &mut seen);
     out
 }
 
+/// Walk the resource's doc tree — which already inlines `#[flatten]` fields,
+/// lists every `Nested`/`Option<Nested>`/`Vec<Nested>` type, and carries provider
+/// variants — collecting each `#[reference(...)]` target. Doc-based (not the
+/// erased instance) because a `Vec<Nested>`/`Option<Nested>` is empty in an
+/// `empty()` instance, so an instance walk can't see its element type's FKs — the
+/// bug that let `filter.indexers[].id → indexer` (and any `Vec<Nested>` FK) escape
+/// the apply-order graph. `seen` guards against cyclic nested types.
 fn collect_reference_targets(
-    d: crate::described::ResourceDescriptorErased<'_>,
+    doc: &ResourceDoc,
     out: &mut Vec<&'static str>,
+    seen: &mut Vec<&'static str>,
 ) {
-    use crate::field::FieldRef;
-    for f in d.fields.iter {
+    for f in &doc.fields {
         if let Some(r) = f.reference {
             out.push(r);
         }
-        if let FieldRef::Nested(n) = f.value {
-            collect_reference_targets(n.descriptor_erased(), out);
+    }
+    for p in &doc.providers {
+        for v in &p.variants {
+            for f in &v.fields {
+                if let Some(r) = f.reference {
+                    out.push(r);
+                }
+            }
         }
+    }
+    for n in &doc.nested {
+        if seen.contains(&n.type_name) {
+            continue;
+        }
+        seen.push(n.type_name);
+        collect_reference_targets(&(n.docs)(), out, seen);
     }
 }
 

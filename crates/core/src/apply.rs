@@ -451,12 +451,46 @@ async fn custom_step<S: Service>(
         .await
         .with_context(|| format!("custom sync `{tn}`"))?;
 
+    // Export this resource's server ids into the RefStore so later resources can
+    // `${ref.<tn>.<key>}` it — the same registration `collection_step` does, which
+    // is why crud resources are referenceable and custom ones weren't. Keyed
+    // custom collections (indexer, filter, irc) qualify; custom singletons (no
+    // `key_wire`) don't. Runs post-hook so freshly-created ids are included, and
+    // in both plan and apply (a read-only list GET), matching topological order.
+    register_refs(client, tn, field, refs).await?;
+
     let ops = changes.into_iter().map(change_to_op).collect();
     Ok(Some(PlanStep {
         type_name: tn,
         ops,
         secret_keys: Vec::new(),
     }))
+}
+
+/// Register `(key -> server id)` for every live item of a keyed resource, so
+/// `${ref.<type>.<key>}` resolves in later-applied resources. No-op when the
+/// resource has no natural key or no list endpoint (custom singletons). Mirrors
+/// the live-id registration `collection_step` does inline (it keeps its `live`
+/// list for the diff, so it can't call this without a second GET).
+async fn register_refs<S: Service>(
+    client: &HttpClient,
+    tn: &'static str,
+    field: &ServiceField<S>,
+    refs: &mut RefStore,
+) -> anyhow::Result<()> {
+    let (Some(key), Some(list_ep)) = ((field.key_wire)(), (field.endpoints)().list) else {
+        return Ok(());
+    };
+    let live: Vec<Value> = client.get(list_ep.path).await?;
+    for lv in &live {
+        if let (Some(k), Some(id)) = (
+            lv.get(&key).map(plan::key_str),
+            lv.get("id").and_then(RefId::from_value),
+        ) {
+            refs.insert(tn, &k, id);
+        }
+    }
+    Ok(())
 }
 
 /// Build the display-only report [`Op`] for one custom [`Change`]. Custom ops are

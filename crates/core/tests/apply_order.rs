@@ -1,7 +1,7 @@
 //! Apply ordering from static `#[reference]` metadata.
 
 use core_lib::apply::apply_order;
-use core_macros::{resource, service};
+use core_macros::{nested, resource, service};
 
 #[resource(
     sync = crud,
@@ -55,4 +55,61 @@ fn referenced_type_comes_first() {
 fn order_is_complete() {
     let order = apply_order::<Lib>().unwrap();
     assert_eq!(order.len(), 2);
+}
+
+// ── reference nested inside a `Vec<Nested>` ──────────────────────────────────
+// The FK lives on a nested element (`Gadget.links[].zone_id`), not a top-level
+// field. An `empty()` Gadget has an empty `links` vec, so an instance-based
+// reference walk can't see the FK — the bug that let `filter.indexers[].id`
+// escape the graph. `zone` sorts *after* `gadget` alphabetically, so only a real
+// edge (not fallback ordering) puts it first.
+
+#[resource(
+    sync = crud,
+    list = get("/api/zone"),
+    create = post("/api/zone"),
+    update = put("/api/zone/${self.id}"),
+    delete = delete("/api/zone/${self.id}"),
+)]
+pub struct Zone {
+    #[id]
+    pub id: Option<i32>,
+    #[key]
+    pub name: String,
+}
+
+#[nested]
+pub struct GadgetLink {
+    #[reference(zone)]
+    pub zone_id: Option<i32>,
+}
+
+#[resource(
+    sync = crud,
+    list = get("/api/gadget"),
+    create = post("/api/gadget"),
+    update = put("/api/gadget/${self.id}"),
+    delete = delete("/api/gadget/${self.id}"),
+)]
+pub struct Gadget {
+    #[id]
+    pub id: Option<i32>,
+    #[key]
+    pub name: String,
+    pub links: Vec<GadgetLink>,
+}
+
+#[service(name = "shed", auth = none)]
+pub struct Shed {
+    pub url: String,
+    pub gadgets: Vec<Gadget>,
+    pub zones: Vec<Zone>,
+}
+
+#[test]
+fn reference_inside_vec_nested_creates_an_edge() {
+    let order = apply_order::<Shed>().unwrap();
+    let zone = order.iter().position(|t| *t == "zone").unwrap();
+    let gadget = order.iter().position(|t| *t == "gadget").unwrap();
+    assert!(zone < gadget, "zone must precede gadget: {order:?}");
 }

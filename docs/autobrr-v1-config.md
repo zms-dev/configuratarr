@@ -186,9 +186,9 @@ Allowed values: `PUSH_APPROVED` / `PUSH_REJECTED` / `PUSH_ERROR` / `IRC_DISCONNE
 
 | Field | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `id` | integer | no |  | Server indexer id. |
-| `name` | string | no |  | Indexer display name. |
-| `identifier` | string | no |  | Indexer identifier (e.g. `torrentleech`). |
+| `id` | integer | no |  | Server indexer id — attach a managed indexer via `${ref.indexer.<name>}`. References a [`indexer`](#indexer) by name (`${ref.indexer.<key>}`). |
+| `name` | string | no |  | Indexer display name (read-only; autobrr fills it). |
+| `identifier` | string | no |  | Indexer identifier, e.g. `torznab-<name>` (read-only; autobrr fills it). |
 
 ### Action
 

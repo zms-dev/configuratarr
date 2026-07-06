@@ -136,6 +136,70 @@ async fn filter_two_step_create_idempotent() {
     assert_eq!(second.unchanged, 1);
 }
 
+/// Cross-reference a custom-sync producer: a filter attaches an `indexer` by
+/// `${ref.indexer.<name>}`. Proves the engine now exports custom-sync ids into
+/// the RefStore (an unresolved ref would fail `apply`), that autobrr stores the
+/// resolved numeric id (`indexers[0].id`), and that it settles idempotently (a
+/// dropped attachment would perpetually re-update).
+#[tokio::test]
+#[ignore]
+async fn filter_attaches_indexer_by_ref() {
+    use core_lib::Service;
+
+    let Some((url, key)) = env() else { return };
+    let cfg = json!({
+        "indexers": [{
+            "name": "cfg-e2e-refidx",
+            "identifier": "torznab",
+            "implementation": "torznab",
+            "settings": { "url": "https://tracker.example.org/t", "api_key": "K" },
+        }],
+        "filters": [{
+            "name": "cfg-e2e-reffilter",
+            "enabled": true,
+            "indexers": [{ "id": "${ref.indexer.cfg-e2e-refidx}" }],
+        }],
+    });
+
+    // A successful apply already proves the ref resolved (an unresolved
+    // `${ref.indexer.*}` errors out in `run`).
+    run(&url, &key, cfg.clone(), ApplyOptions::default()).await;
+
+    // The attachment must land server-side as the indexer's numeric id.
+    let (svc, _) = instance::<AutobrrV1>(&url, &key, json!({}));
+    let client = core_lib::apply::connect(&svc.connection())
+        .await
+        .expect("connect");
+    let indexers: Vec<Value> = client.get("/api/indexer").await.expect("list indexers");
+    let idx_id = indexers
+        .iter()
+        .find(|i| i.get("name").and_then(Value::as_str) == Some("cfg-e2e-refidx"))
+        .and_then(|i| i.get("id").and_then(Value::as_i64))
+        .expect("indexer present");
+    let filters: Vec<Value> = client.get("/api/filters").await.expect("list filters");
+    let fid = filters
+        .iter()
+        .find(|f| f.get("name").and_then(Value::as_str) == Some("cfg-e2e-reffilter"))
+        .and_then(|f| f.get("id").and_then(Value::as_i64))
+        .expect("filter present");
+    let full: Value = client
+        .get(&format!("/api/filters/{fid}"))
+        .await
+        .expect("get filter");
+    let attached: Vec<i64> = full["indexers"]
+        .as_array()
+        .map(|a| a.iter().filter_map(|i| i["id"].as_i64()).collect())
+        .unwrap_or_default();
+    assert!(
+        attached.contains(&idx_id),
+        "filter should have indexer {idx_id} attached, got {attached:?}"
+    );
+
+    // Idempotent: a dropped attachment would re-update forever.
+    let second = run(&url, &key, cfg, ApplyOptions::default()).await;
+    assert_eq!(second.updated, 0, "second apply is a no-op: {second:?}");
+}
+
 /// Proxy crud: created, then a repeated apply is a no-op (no secret sent, so the
 /// merge is stable), then pruned via DELETE.
 #[tokio::test]
