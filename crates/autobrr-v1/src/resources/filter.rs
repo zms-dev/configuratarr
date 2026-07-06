@@ -109,6 +109,76 @@ pub struct Filter {
     pub max_size: Option<String>,
     /// Delay before pushing, seconds.
     pub delay: Option<i32>,
+    /// Cap the number of grabs.
+    pub max_downloads: Option<i32>,
+    /// Window the `max_downloads` cap applies over: `HOUR`, `DAY`, `WEEK`,
+    /// `MONTH`, or `EVER`.
+    pub max_downloads_unit: Option<String>,
+    /// Match these announce types (`NEW`, `PROMO`, `PROMO_GP`, `RESURRECTED`).
+    pub announce_types: Vec<String>,
+    /// Match only scene releases.
+    pub scene: Option<bool>,
+    /// Match these bonus/reward tags (tracker-specific).
+    pub bonus: Vec<String>,
+    /// Match only freeleech releases.
+    pub freeleech: Option<bool>,
+    /// Match these freeleech percentages (e.g. `50,100`).
+    pub freeleech_percent: Option<String>,
+    /// Match these show/title terms.
+    pub shows: Option<String>,
+    /// Match months (e.g. `1,6-8`).
+    pub months: Option<String>,
+    /// Match days.
+    pub days: Option<String>,
+    /// Match these artists (music).
+    pub artists: Option<String>,
+    /// Match these albums (music).
+    pub albums: Option<String>,
+    /// Exclude these release types.
+    pub except_release_types: Option<String>,
+    /// Match only perfect FLAC (music).
+    pub perfect_flac: Option<bool>,
+    /// Require a CUE file (music).
+    pub cue: Option<bool>,
+    /// Require a log (music).
+    pub log: Option<bool>,
+    /// Minimum log score (music).
+    pub log_score: Option<i32>,
+    /// Match these uploaders.
+    pub match_uploaders: Option<String>,
+    /// Exclude these uploaders.
+    pub except_uploaders: Option<String>,
+    /// Match these record labels (music).
+    pub match_record_labels: Option<String>,
+    /// Exclude these record labels (music).
+    pub except_record_labels: Option<String>,
+    /// Match if the release carries any of these tags.
+    pub tags_any: Option<String>,
+    /// Exclude if the release carries any of these tags.
+    pub except_tags_any: Option<String>,
+    /// Match these release tags.
+    pub match_release_tags: Option<String>,
+    /// Exclude these release tags.
+    pub except_release_tags: Option<String>,
+    /// Treat release-tag patterns as regular expressions.
+    pub use_regex_release_tags: Option<bool>,
+    /// Match these terms in the release description.
+    pub match_description: Option<String>,
+    /// Exclude these terms in the release description.
+    pub except_description: Option<String>,
+    /// Treat description patterns as regular expressions.
+    pub use_regex_description: Option<bool>,
+    /// Minimum seeders.
+    pub min_seeders: Option<i32>,
+    /// Maximum seeders.
+    pub max_seeders: Option<i32>,
+    /// Minimum leechers.
+    pub min_leechers: Option<i32>,
+    /// Maximum leechers.
+    pub max_leechers: Option<i32>,
+    /// Dedup profile to apply (`${ref.release_profile_duplicate.<name>}`).
+    #[reference(release_profile_duplicate)]
+    pub release_profile_duplicate_id: Option<i32>,
     /// Indexers this filter is attached to.
     pub indexers: Vec<FilterIndexer>,
     /// Actions run on a matched release.
@@ -159,10 +229,19 @@ pub(crate) fn is_subset(want: &Value, have: &Value) -> bool {
     if is_empty(want) {
         return true;
     }
+    // autobrr stores an unset nilable `*bool` as null, so a declared `false`
+    // reads back as null (or false). Treat those as equal. Non-nullable bools
+    // (e.g. irc `enabled`) always read back as a real boolean, never null, so a
+    // genuine `true → false` toggle still diffs and triggers an update.
+    if want == &Value::Bool(false) && (have.is_null() || have == &Value::Bool(false)) {
+        return true;
+    }
     match (want, have) {
+        // A key absent from `have` is compared as null, so an empty/`false`
+        // declared value (which autobrr drops on write) still counts as in sync.
         (Value::Object(w), Value::Object(h)) => w
             .iter()
-            .all(|(k, wv)| is_empty(wv) || h.get(k).is_some_and(|hv| is_subset(wv, hv))),
+            .all(|(k, wv)| is_subset(wv, h.get(k).unwrap_or(&Value::Null))),
         (Value::Array(w), Value::Array(h)) => {
             w.len() == h.len() && w.iter().zip(h).all(|(wv, hv)| is_subset(wv, hv))
         }

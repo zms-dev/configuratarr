@@ -136,6 +136,91 @@ async fn filter_two_step_create_idempotent() {
     assert_eq!(second.unchanged, 1);
 }
 
+/// Full-coverage guard: a filter carrying the newly-modelled scalar/array fields
+/// and a fully-specified action, plus a dedup profile attached by
+/// `${ref.release_profile_duplicate.<name>}`. Conformance can't catch a field
+/// autobrr rejects at runtime (the `base_url` lesson), so this asserts the live
+/// API accepts every new field, that the dedup id lands, and that it's idempotent.
+#[tokio::test]
+#[ignore]
+async fn filter_full_fields_and_dedup_ref() {
+    use core_lib::Service;
+
+    let Some((url, key)) = env() else { return };
+    let cfg = json!({
+        "download_clients": [{
+            "name": "cfg-e2e-qbit2", "client_type": "QBITTORRENT", "enabled": true,
+            "host": "http://localhost", "port": 8080,
+        }],
+        "release_profile_duplicates": [{
+            "name": "cfg-e2e-dedup",
+            "title": true, "year": true, "resolution": true, "group": true, "proper": true,
+        }],
+        "filters": [{
+            "name": "cfg-e2e-full",
+            "enabled": true,
+            "priority": 5,
+            "resolutions": ["1080p"],
+            "announce_types": ["NEW"],
+            "scene": false,
+            "freeleech": true,
+            "freeleech_percent": "100",
+            "max_downloads": 5,
+            "max_downloads_unit": "DAY",
+            "min_seeders": 2,
+            "max_seeders": 500,
+            "match_description": "internal",
+            "log": false,
+            "release_profile_duplicate_id": "${ref.release_profile_duplicate.cfg-e2e-dedup}",
+            "actions": [{
+                "name": "qb", "action_type": "QBITTORRENT", "enabled": true,
+                "client_id": "${ref.download_client.cfg-e2e-qbit2}",
+                "category": "movies", "content_layout": "ORIGINAL", "priority": "max",
+                "limit_ratio": 2.0, "limit_seed_time": 1440, "limit_upload_speed": 1000,
+                "skip_hash_check": true, "paused": false,
+            }],
+        }],
+    });
+
+    // Live must accept every new field (an unknown/mistyped one 500s in apply).
+    run(&url, &key, cfg.clone(), ApplyOptions::default()).await;
+
+    // The dedup ref resolved and landed as the profile's numeric id.
+    let (svc, _) = instance::<AutobrrV1>(&url, &key, json!({}));
+    let client = core_lib::apply::connect(&svc.connection())
+        .await
+        .expect("connect");
+    let dups: Vec<Value> = client
+        .get("/api/release/profiles/duplicate")
+        .await
+        .expect("list dedup");
+    let dup_id = dups
+        .iter()
+        .find(|d| d.get("name").and_then(Value::as_str) == Some("cfg-e2e-dedup"))
+        .and_then(|d| d.get("id").and_then(Value::as_i64))
+        .expect("dedup present");
+    let filters: Vec<Value> = client.get("/api/filters").await.expect("list filters");
+    let fid = filters
+        .iter()
+        .find(|f| f.get("name").and_then(Value::as_str) == Some("cfg-e2e-full"))
+        .and_then(|f| f.get("id").and_then(Value::as_i64))
+        .expect("filter present");
+    let full: Value = client
+        .get(&format!("/api/filters/{fid}"))
+        .await
+        .expect("get filter");
+    assert_eq!(
+        full.get("release_profile_duplicate_id")
+            .and_then(Value::as_i64),
+        Some(dup_id),
+        "dedup id attached: {full:?}"
+    );
+
+    // Idempotent — the subset diff over the new fields must settle.
+    let second = run(&url, &key, cfg, ApplyOptions::default()).await;
+    assert_eq!(second.updated, 0, "second apply is a no-op: {second:?}");
+}
+
 /// Cross-reference a custom-sync producer: a filter attaches an `indexer` by
 /// `${ref.indexer.<name>}`. Proves the engine now exports custom-sync ids into
 /// the RefStore (an unresolved ref would fail `apply`), that autobrr stores the
@@ -267,6 +352,48 @@ async fn indexer_create_update_idempotent() {
         settled.unchanged, 1,
         "update settles to unchanged: {settled:?}"
     );
+}
+
+/// An `irc`-implementation indexer round-trips with a top-level `base_url` and
+/// its IRC login in `settings`. autobrr rejects an IRC indexer whose `base_url`
+/// is empty (`indexer baseURL must not be empty`), so a clean create+idempotent
+/// apply proves configuratarr can produce a valid IRC indexer.
+#[tokio::test]
+#[ignore]
+async fn irc_indexer_with_base_url() {
+    use core_lib::Service;
+
+    let Some((url, key)) = env() else { return };
+    let cfg = json!({ "indexers": [{
+        "name": "cfg-e2e-tl",
+        "identifier": "torrentleech",
+        "implementation": "irc",
+        "base_url": "https://www.torrentleech.org",
+        "settings": { "nick": "cfg_e2e_bot", "auth.account": "cfg", "auth.password": "pw" },
+    }] });
+
+    // A missing base_url would 500 inside apply; a clean apply proves it's sent.
+    run(&url, &key, cfg.clone(), ApplyOptions::default()).await;
+
+    // base_url persisted server-side.
+    let (svc, _) = instance::<AutobrrV1>(&url, &key, json!({}));
+    let client = core_lib::apply::connect(&svc.connection())
+        .await
+        .expect("connect");
+    let indexers: Vec<Value> = client.get("/api/indexer").await.expect("list indexers");
+    let idx = indexers
+        .iter()
+        .find(|i| i.get("name").and_then(Value::as_str) == Some("cfg-e2e-tl"))
+        .expect("indexer present");
+    assert_eq!(
+        idx.get("base_url").and_then(Value::as_str),
+        Some("https://www.torrentleech.org"),
+        "base_url persisted: {idx:?}"
+    );
+
+    // Idempotent (base_url is now in the readable diff).
+    let second = run(&url, &key, cfg, ApplyOptions::default()).await;
+    assert_eq!(second.updated, 0, "second apply is a no-op: {second:?}");
 }
 
 /// IRC network custom sync: the structural-subset diff makes a repeated apply a

@@ -13,10 +13,11 @@
 //!
 //! So this hook creates by name (base identifier), and on re-apply PUTs the full
 //! config back using the *live* identifier + re-sent settings. Idempotency is
-//! judged on the readable fields (`enabled`, `implementation`); a settings-only
-//! edit can't be detected (the values aren't readable) and is always re-sent on
-//! an update triggered by another change. No prune (the custom seam carries no
-//! `prune` flag; matches the "don't delete server-owned defs" caution).
+//! judged on the readable fields (`enabled`, `implementation`, `base_url`); a
+//! settings-only edit can't be detected (the values aren't readable) and is
+//! always re-sent on an update triggered by another change. No prune (the custom
+//! seam carries no `prune` flag; matches the "don't delete server-owned defs"
+//! caution).
 
 use core_lib::engine;
 use core_lib::{Change, CustomSync, CustomSyncFuture, HttpClient, Json, RefStore};
@@ -37,11 +38,24 @@ pub struct Indexer {
     pub identifier: String,
     /// Definition implementation: `torznab`, `newznab`, `rss`, or `irc`.
     pub implementation: String,
+    /// Tracker base URL. **Required for `irc` indexers** — autobrr rejects an
+    /// empty `base_url` there (`indexer baseURL must not be empty`); it maps the
+    /// indexer into the IRC announce handler by it. A top-level field, not a
+    /// `settings` entry.
+    pub base_url: Option<String>,
     /// Whether the indexer is active.
     #[default(true)]
     pub enabled: bool,
-    /// Definition settings as a flat `name: value` map (e.g.
-    /// `{ url: "...", api_key: "..." }`). Write-only — never returned on read.
+    /// Route this indexer's HTTP through a proxy.
+    pub use_proxy: Option<bool>,
+    /// Proxy to route through (`${ref.proxy.<name>}`).
+    #[reference(proxy)]
+    pub proxy_id: Option<i32>,
+    /// Definition settings as a flat `name: value` map. For a torznab/newznab
+    /// indexer: `{ url: "...", api_key: "..." }`. For an `irc` indexer, the IRC
+    /// login: `{ nick: "...", "auth.account": "...", "auth.password": "..." }` —
+    /// autobrr derives the IRC network from the indexer, so the login lives here,
+    /// not on a separate `irc_networks` entry. Write-only — never returned on read.
     pub settings: Json,
 }
 
@@ -49,8 +63,10 @@ pub struct Indexer {
 /// caller). `settings`/`identifier` are excluded — settings values aren't
 /// readable and the live identifier is the server-rewritten form.
 fn readable_matches(wire: &Value, live: &Value) -> bool {
-    let eq = |k: &str| wire.get(k) == live.get(k);
-    eq("enabled") && eq("implementation")
+    // Coalesce absent/null: an unset `base_url` is omitted on encode but read back
+    // as `null`, and the two must compare equal (else torznab indexers churn).
+    let eq = |k: &str| wire.get(k).unwrap_or(&Value::Null) == live.get(k).unwrap_or(&Value::Null);
+    eq("enabled") && eq("implementation") && eq("base_url")
 }
 
 impl CustomSync for Indexer {

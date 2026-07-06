@@ -41,3 +41,4 @@ pub mod indexer;
 pub mod irc_auth;
 pub mod irc_channel;
 pub mod irc_network;
+pub mod release_profile_duplicate;

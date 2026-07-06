@@ -132,6 +132,11 @@ pub enum DefaultLit {
     Str(&'static str),
 }
 
+/// Recurses reference-target collection into a nested field's inner type:
+/// `fn(out, seen)`, appending targets to `out` and using `seen` (type names) to
+/// terminate cyclic nesting. See [`FieldDescriptor::nested_reference_targets`].
+pub type NestedRefCollector = fn(&mut Vec<&'static str>, &mut Vec<&'static str>);
+
 /// Static description of one field on a resource.
 pub struct FieldDescriptor<T: 'static> {
     /// Snake-case Rust field name; the codec maps it to the wire name.
@@ -184,6 +189,14 @@ pub struct FieldDescriptor<T: 'static> {
     /// provider for the inner type's docs — so doc-gen can render its section
     /// even when the value is absent in an `empty()` instance. `None` otherwise.
     pub nested_docs: Option<fn() -> crate::engine::ResourceDoc>,
+
+    /// For a nested-type field, recurse [`crate::engine::collect_reference_targets`]
+    /// into the inner type — collecting its `#[reference]` targets into `out`,
+    /// with `seen` guarding self-/mutually-recursive nested types (e.g. a quality
+    /// group whose items nest the same type). Lets `reference_targets` reach a
+    /// `Vec<Nested>`/`Option<Nested>` FK without an instance (an `empty()`
+    /// list/option is empty). `None` for non-nested fields.
+    pub nested_reference_targets: Option<NestedRefCollector>,
 
     /// For a nested single-object field (`Nested` / `Option<Nested>`), the inner
     /// type's presence-masked config→wire, so `present_to_wire` masks the nested

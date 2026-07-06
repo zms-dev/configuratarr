@@ -40,6 +40,28 @@ pub struct Notification {
     pub topic: Option<String>,
     /// Provider host (self-hosted Gotify/ntfy).
     pub host: Option<String>,
+    /// Message title (ntfy and similar).
+    pub title: Option<String>,
+    /// Icon / avatar override.
+    pub icon: Option<String>,
+    /// Username for auth-protected providers (ntfy, Matrix).
+    pub username: Option<String>,
+    /// Password for auth-protected providers.
+    pub password: Option<SecretValue>,
+    /// Rooms to post to (Matrix).
+    pub rooms: Option<String>,
+    /// Explicit targets (Shoutrrr and similar).
+    pub targets: Option<String>,
+    /// Target device names (Pushover).
+    pub devices: Option<String>,
+    /// Message priority (Pushover / Gotify / ntfy).
+    pub priority: Option<i32>,
+    /// Notification sound (Pushover / ntfy).
+    pub sound: Option<String>,
+    /// HTTP method (generic webhook providers).
+    pub method: Option<String>,
+    /// Extra headers (generic webhook providers).
+    pub headers: Option<String>,
 }
 
 impl CustomSync for Notification {

@@ -72,3 +72,9 @@ conformance!(
     "Indexer",
     "testdata/indexer/config.yaml"
 );
+conformance!(
+    release_profile_duplicate,
+    resources::release_profile_duplicate::ReleaseProfileDuplicate,
+    "ReleaseProfileDuplicate",
+    "testdata/release_profile_duplicate/config.yaml"
+);

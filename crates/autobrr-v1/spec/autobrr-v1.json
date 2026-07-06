@@ -285,6 +285,36 @@
           "timeout": { "type": "integer" }
         }
       },
+      "ReleaseProfileDuplicate": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "name": { "type": "string" },
+          "protocol": { "type": "boolean" },
+          "release_name": { "type": "boolean" },
+          "hash": { "type": "boolean" },
+          "title": { "type": "boolean" },
+          "sub_title": { "type": "boolean" },
+          "year": { "type": "boolean" },
+          "month": { "type": "boolean" },
+          "day": { "type": "boolean" },
+          "source": { "type": "boolean" },
+          "resolution": { "type": "boolean" },
+          "codec": { "type": "boolean" },
+          "container": { "type": "boolean" },
+          "dynamic_range": { "type": "boolean" },
+          "audio": { "type": "boolean" },
+          "group": { "type": "boolean" },
+          "season": { "type": "boolean" },
+          "episode": { "type": "boolean" },
+          "website": { "type": "boolean" },
+          "proper": { "type": "boolean" },
+          "repack": { "type": "boolean" },
+          "edition": { "type": "boolean" },
+          "hybrid": { "type": "boolean" },
+          "language": { "type": "boolean" }
+        }
+      },
       "DownloadClientBasic": {
         "type": "object",
         "properties": {

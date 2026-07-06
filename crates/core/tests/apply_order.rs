@@ -113,3 +113,46 @@ fn reference_inside_vec_nested_creates_an_edge() {
     let gadget = order.iter().position(|t| *t == "gadget").unwrap();
     assert!(zone < gadget, "zone must precede gadget: {order:?}");
 }
+
+// ── self-referential nested type ─────────────────────────────────────────────
+// A nested type whose field nests the *same* type (like radarr's quality-profile
+// groups). `reference_targets` must terminate (a naive recursion stack-overflows)
+// and still collect the FK carried on the recursive node.
+
+#[nested]
+pub struct TreeNode {
+    #[reference(zone)]
+    pub zone_id: Option<i32>,
+    pub children: Vec<TreeNode>,
+}
+
+#[resource(
+    sync = crud,
+    list = get("/api/tree"),
+    create = post("/api/tree"),
+    update = put("/api/tree/${self.id}"),
+    delete = delete("/api/tree/${self.id}"),
+)]
+pub struct Tree {
+    #[id]
+    pub id: Option<i32>,
+    #[key]
+    pub name: String,
+    pub root: Vec<TreeNode>,
+}
+
+#[service(name = "forest", auth = none)]
+pub struct Forest {
+    pub url: String,
+    pub trees: Vec<Tree>,
+    pub zones: Vec<Zone>,
+}
+
+#[test]
+fn recursive_nested_terminates_and_finds_ref() {
+    // Would stack-overflow without a cycle guard.
+    let order = apply_order::<Forest>().unwrap();
+    let zone = order.iter().position(|t| *t == "zone").unwrap();
+    let tree = order.iter().position(|t| *t == "tree").unwrap();
+    assert!(zone < tree, "zone must precede tree: {order:?}");
+}

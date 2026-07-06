@@ -1,7 +1,12 @@
-name: discord-releases
-notification_type: DISCORD
+name: pushover-releases
+notification_type: PUSHOVER
 enabled: true
 events:
   - PUSH_APPROVED
   - PUSH_REJECTED
-webhook: https://discord.com/api/webhooks/123/abc
+token: "${env.PUSHOVER_TOKEN}"
+api_key: "${env.PUSHOVER_USER}"
+priority: 2
+devices: phone,tablet
+sound: pushover
+title: Release

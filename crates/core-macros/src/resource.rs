@@ -413,6 +413,25 @@ fn emit_struct_fields(
             _ => quote!(None),
         };
 
+        // Mirror of `nested_docs`, but for `#[reference]` targets: lets
+        // `reference_targets` descend into a nested type's FKs without an instance
+        // (a `Vec<Nested>`/`Option<Nested>` is empty in `empty()`).
+        let nested_ref_targets_tok: TokenStream = match &kind {
+            Kind::Nested { .. } => {
+                let inner = &f.ty;
+                quote!(Some(|out, seen| {
+                    ::core_lib::engine::collect_reference_targets::<#inner>(out, seen)
+                }))
+            }
+            Kind::OptNested { .. } | Kind::VecNested { .. } => match inner_generic(&f.ty) {
+                Some(inner) => quote!(Some(|out, seen| {
+                    ::core_lib::engine::collect_reference_targets::<#inner>(out, seen)
+                })),
+                None => quote!(None),
+            },
+            _ => quote!(None),
+        };
+
         // For a nested single object (`Nested` / `Option<Nested>`), emit the
         // inner type's presence-masked config→wire so `present_to_wire` recurses.
         // `Vec<Nested>` is excluded — a list has no per-element presence mask.
@@ -444,6 +463,7 @@ fn emit_struct_fields(
                 fields_map: #fields_map_tok,
                 reference: #reference_tok,
                 nested_docs: #nested_docs_tok,
+                nested_reference_targets: #nested_ref_targets_tok,
                 nested_present: #nested_present_tok,
                 get: |t| { #get_tok },
                 set: |t, v| { #set_tok },

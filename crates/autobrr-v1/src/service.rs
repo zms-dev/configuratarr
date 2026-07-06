@@ -17,6 +17,7 @@ use crate::resources::indexer::Indexer;
 use crate::resources::irc_network::IrcNetwork;
 use crate::resources::notification::Notification;
 use crate::resources::proxy::Proxy;
+use crate::resources::release_profile_duplicate::ReleaseProfileDuplicate;
 
 /// Autobrr v1 — desired-state config for one instance.
 #[service(
@@ -45,6 +46,8 @@ pub struct AutobrrV1 {
     pub indexers: Vec<Indexer>,
     /// IRC networks and their channels (create + update by name; no prune).
     pub irc_networks: Vec<IrcNetwork>,
+    /// Duplicate/dedup profiles (create-only; referenced by filters).
+    pub release_profile_duplicates: Vec<ReleaseProfileDuplicate>,
     /// Release-matching filters.
     pub filters: Vec<Filter>,
 }

@@ -64,47 +64,44 @@ pub fn key_wire_name<T: Described>() -> Option<String> {
 /// through nested/`#[flatten]` structs — so a ref on a flattened envelope (e.g.
 /// `Provider.tags`) is still seen. Drives apply ordering.
 ///
-/// Walks an `empty()` instance's erased view; references inside `Vec<Nested>`
-/// fields aren't reachable (the vec is empty) — a known, rare gap.
+/// Walks the **static** descriptor (no instance): each field contributes its own
+/// `#[reference]` and, for a nested field, its inner type's targets via the
+/// macro-emitted [`FieldDescriptor::nested_reference_targets`]. That accessor is
+/// how a `Vec<Nested>`/`Option<Nested>` FK is reached — an `empty()` instance's
+/// list/option is empty, so an instance walk can't see the element type (the bug
+/// that let `filter.indexers[].id → indexer` escape the apply-order graph).
+/// `#[flatten]` fields are nested, so their FKs (e.g. the *arr `Provider.tags`)
+/// recurse too. Unlike a doc-tree walk, read-only fields are **not** skipped.
+///
+/// `seen` (by resource type name) guards self-/mutually-recursive nested types —
+/// e.g. radarr's `QualityProfileItem`, whose `items` nest the same type.
 pub fn reference_targets<T: Described>() -> Vec<&'static str> {
     let mut out = Vec::new();
     let mut seen = Vec::new();
-    collect_reference_targets(&resource_docs::<T>(), &mut out, &mut seen);
+    collect_reference_targets::<T>(&mut out, &mut seen);
     out
 }
 
-/// Walk the resource's doc tree — which already inlines `#[flatten]` fields,
-/// lists every `Nested`/`Option<Nested>`/`Vec<Nested>` type, and carries provider
-/// variants — collecting each `#[reference(...)]` target. Doc-based (not the
-/// erased instance) because a `Vec<Nested>`/`Option<Nested>` is empty in an
-/// `empty()` instance, so an instance walk can't see its element type's FKs — the
-/// bug that let `filter.indexers[].id → indexer` (and any `Vec<Nested>` FK) escape
-/// the apply-order graph. `seen` guards against cyclic nested types.
-fn collect_reference_targets(
-    doc: &ResourceDoc,
+/// Collect `T`'s `#[reference]` targets (its own + those of its nested types)
+/// into `out`, recursing via the macro-emitted per-field accessors. `seen` tracks
+/// visited type names so a cyclic nesting terminates. Public because the
+/// generated `nested_reference_targets` closures re-enter it for the inner type.
+pub fn collect_reference_targets<T: Described>(
     out: &mut Vec<&'static str>,
     seen: &mut Vec<&'static str>,
 ) {
-    for f in &doc.fields {
+    let tn = T::descriptor().type_name;
+    if seen.contains(&tn) {
+        return;
+    }
+    seen.push(tn);
+    for f in T::descriptor().fields {
         if let Some(r) = f.reference {
             out.push(r);
         }
-    }
-    for p in &doc.providers {
-        for v in &p.variants {
-            for f in &v.fields {
-                if let Some(r) = f.reference {
-                    out.push(r);
-                }
-            }
+        if let Some(nested) = f.nested_reference_targets {
+            nested(out, seen);
         }
-    }
-    for n in &doc.nested {
-        if seen.contains(&n.type_name) {
-            continue;
-        }
-        seen.push(n.type_name);
-        collect_reference_targets(&(n.docs)(), out, seen);
     }
 }
 

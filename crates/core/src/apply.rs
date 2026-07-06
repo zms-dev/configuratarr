@@ -385,14 +385,7 @@ async fn collection_step<S: Service>(
         .list
         .ok_or_else(|| anyhow::anyhow!("collection `{tn}` has no list endpoint"))?;
     let live: Vec<Value> = client.get(list_ep.path).await?;
-    for lv in &live {
-        if let (Some(k), Some(id)) = (
-            lv.get(&key).map(plan::key_str),
-            lv.get("id").and_then(RefId::from_value),
-        ) {
-            refs.insert(tn, &k, id);
-        }
-    }
+    register_live_ids(refs, tn, &key, &live);
 
     let desired = resolve_all(&cfgs, refs, |r| (field.config_to_wire)(&r))?;
 
@@ -457,7 +450,7 @@ async fn custom_step<S: Service>(
     // custom collections (indexer, filter, irc) qualify; custom singletons (no
     // `key_wire`) don't. Runs post-hook so freshly-created ids are included, and
     // in both plan and apply (a read-only list GET), matching topological order.
-    register_refs(client, tn, field, refs).await?;
+    register_refs(client, tn, field, refs).await;
 
     let ops = changes.into_iter().map(change_to_op).collect();
     Ok(Some(PlanStep {
@@ -467,30 +460,52 @@ async fn custom_step<S: Service>(
     }))
 }
 
-/// Register `(key -> server id)` for every live item of a keyed resource, so
-/// `${ref.<type>.<key>}` resolves in later-applied resources. No-op when the
-/// resource has no natural key or no list endpoint (custom singletons). Mirrors
-/// the live-id registration `collection_step` does inline (it keeps its `live`
-/// list for the diff, so it can't call this without a second GET).
-async fn register_refs<S: Service>(
-    client: &HttpClient,
-    tn: &'static str,
-    field: &ServiceField<S>,
-    refs: &mut RefStore,
-) -> anyhow::Result<()> {
-    let (Some(key), Some(list_ep)) = ((field.key_wire)(), (field.endpoints)().list) else {
-        return Ok(());
-    };
-    let live: Vec<Value> = client.get(list_ep.path).await?;
-    for lv in &live {
+/// Register `(<key> -> server id)` into `refs` for each live item that has both,
+/// so `${ref.<tn>.<key>}` resolves. The shared core of both ref-registration
+/// paths ([`collection_step`] inline, [`register_refs`] after a custom hook).
+fn register_live_ids(refs: &mut RefStore, tn: &'static str, key: &str, live: &[Value]) {
+    for lv in live {
         if let (Some(k), Some(id)) = (
-            lv.get(&key).map(plan::key_str),
+            lv.get(key).map(plan::key_str),
             lv.get("id").and_then(RefId::from_value),
         ) {
             refs.insert(tn, &k, id);
         }
     }
-    Ok(())
+}
+
+/// Register refs from a raw list-endpoint response value: only a plain JSON array
+/// carries `[{id, <key>}]` items. A non-array (e.g. Jellyfin's `{Items:[…]}`
+/// wrapper) yields nothing — see [`register_refs`].
+fn register_list_refs(refs: &mut RefStore, tn: &'static str, key: &str, live: &Value) {
+    if let Some(arr) = live.as_array() {
+        register_live_ids(refs, tn, key, arr);
+    }
+}
+
+/// Register a keyed resource's server ids so `${ref.<type>.<key>}` resolves in
+/// later-applied resources. No-op when the resource has no natural key or list
+/// endpoint (custom singletons).
+///
+/// **Best-effort**, unlike the sync itself. It costs a second list GET (the
+/// custom hook already fetched its own copy but owns that HTTP, so the engine
+/// can't reuse it), and any failure is swallowed: a list that isn't a plain
+/// `[{id, <key>}]` array (Jellyfin's `{Items:[…]}`) or a list GET the API rejects
+/// simply yields no refs rather than failing the apply. A resource that genuinely
+/// *is* referenced but can't be listed flatly surfaces later as an unresolved
+/// ref — the clearer error.
+async fn register_refs<S: Service>(
+    client: &HttpClient,
+    tn: &'static str,
+    field: &ServiceField<S>,
+    refs: &mut RefStore,
+) {
+    let (Some(key), Some(list_ep)) = ((field.key_wire)(), (field.endpoints)().list) else {
+        return;
+    };
+    if let Ok(live) = client.get::<Value>(list_ep.path).await {
+        register_list_refs(refs, tn, &key, &live);
+    }
 }
 
 /// Build the display-only report [`Op`] for one custom [`Change`]. Custom ops are
@@ -631,5 +646,55 @@ async fn send(
             client.delete(path).await?;
             Ok(Value::Null)
         }
+    }
+}
+
+#[cfg(test)]
+mod register_ref_tests {
+    use super::*;
+    use crate::resolver::{RefId, RefSource};
+    use serde_json::json;
+
+    #[test]
+    fn registers_id_and_key_from_array() {
+        let mut refs = RefStore::default();
+        let live = vec![
+            json!({ "name": "TL", "id": 7 }),
+            json!({ "name": "PTP", "id": 9 }),
+        ];
+        register_live_ids(&mut refs, "indexer", "name", &live);
+        assert_eq!(refs.lookup("indexer", "TL"), Some(RefId::Int(7)));
+        assert_eq!(refs.lookup("indexer", "PTP"), Some(RefId::Int(9)));
+    }
+
+    #[test]
+    fn skips_items_missing_id_or_key() {
+        let mut refs = RefStore::default();
+        let live = vec![
+            json!({ "name": "no-id" }),
+            json!({ "id": 3 }),
+            json!({ "name": "ok", "id": 5 }),
+        ];
+        register_live_ids(&mut refs, "t", "name", &live);
+        assert_eq!(refs.lookup("t", "no-id"), None);
+        assert_eq!(refs.lookup("t", "ok"), Some(RefId::Int(5)));
+    }
+
+    #[test]
+    fn list_refs_only_reads_plain_arrays() {
+        // A bare array registers…
+        let mut refs = RefStore::default();
+        register_list_refs(&mut refs, "t", "name", &json!([{ "name": "a", "id": 1 }]));
+        assert_eq!(refs.lookup("t", "a"), Some(RefId::Int(1)));
+
+        // …but a wrapper object (Jellyfin's `{Items:[…]}`) or scalar registers nothing.
+        let mut refs = RefStore::default();
+        register_list_refs(
+            &mut refs,
+            "t",
+            "name",
+            &json!({ "Items": [{ "name": "a", "id": 1 }] }),
+        );
+        assert_eq!(refs.lookup("t", "a"), None);
     }
 }

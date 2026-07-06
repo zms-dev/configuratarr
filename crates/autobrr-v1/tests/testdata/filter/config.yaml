@@ -12,11 +12,27 @@ match_release_types:
   - MOVIE
 origins:
   - INTERNAL
+announce_types:
+  - NEW
+scene: false
+freeleech: true
+freeleech_percent: "100"
+max_downloads: 5
+max_downloads_unit: DAY
+min_seeders: 2
+max_seeders: 500
+min_leechers: 0
+max_leechers: 100
+tags_any: hd,remux
+except_tags_any: cam
+match_description: internal
+use_regex_description: false
+log: false
+release_profile_duplicate_id: ${ref.release_profile_duplicate.movies-dedup}
 min_size: 1GB
 max_size: 20GB
 indexers:
-  - identifier: torrentleech
-    name: TorrentLeech
+  - id: ${ref.indexer.TorrentLeech}
 actions:
   - name: push-to-qbit
     action_type: QBITTORRENT
@@ -24,6 +40,13 @@ actions:
     client_id: ${ref.download_client.qbit-main}
     category: movies
     save_path: /downloads/movies
+    content_layout: ORIGINAL
+    priority: max
+    limit_ratio: 2.0
+    limit_seed_time: 1440
+    limit_upload_speed: 1000
+    skip_hash_check: true
+    paused: false
 external:
   - name: size-check
     external_type: WEBHOOK
