@@ -231,6 +231,47 @@ Autobrr v1 — desired-state config for one instance.
 | `actions` | array of [`action`](#action) | no |  | Actions run on a matched release. |
 | `external` | array of [`external_filter`](#external-filter) | no |  | External (webhook/exec) checks. |
 
+### List
+
+`/api/lists` — a configured list.
+
+| Field | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `name` | string | yes |  | Display name — its identity (`${ref.list.<name>}`). |
+| `list_type` | string | yes |  | List type: `RADARR`, `SONARR`, `LIDARR`, `READARR`, `WHISPARR` (*arr types, need `client_id`), or `MDBLIST`, `METACRITIC`, `PLAINTEXT`, `TRAKT`, `STEAM`, `ANILIST` (external types, need `url`). |
+| `enabled` | boolean | no |  | Whether the list is active. |
+| `client_id` | integer | no |  | Download client to pull wanted titles from, for the *arr list types (`${ref.download_client.<name>}`). References a [`download_client`](#download-client) by name (`${ref.download_client.<key>}`). |
+| `url` | string | no |  | Source URL, for the external list types. |
+| `headers` | array of string | no |  | Extra HTTP headers to send when fetching an external list. |
+| `api_key` | secret string | no |  | API key for the external source, where required. Credential — redacted in plan output. |
+| `filters` | array of [`list_filter`](#list-filter) | no |  | Filters this list feeds into (`${ref.filter.<name>}`). autobrr requires at least one for the *arr list types. |
+| `match_release` | boolean | no |  | Match on the release name rather than the parsed title. |
+| `tags_included` | array of string | no |  | Only include titles carrying these tags. |
+| `tags_excluded` | array of string | no |  | Exclude titles carrying these tags. |
+| `include_unmonitored` | boolean | no |  | Include unmonitored titles (*arr types). |
+| `include_alternate_titles` | boolean | no |  | Include alternate titles (*arr types). |
+| `include_year` | boolean | no |  | Append the year to the matched title. |
+| `skip_clean_sanitize` | boolean | no |  | Skip autobrr's title clean/sanitize pass. |
+
+### Feed
+
+`/api/feeds` — a configured feed.
+
+| Field | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `name` | string | yes |  | Display name — its identity (`${ref.feed.<name>}`). |
+| `indexer_id` | integer | no |  | The feed-type indexer this feed polls (`${ref.indexer.<name>}`). References a [`indexer`](#indexer) by name (`${ref.indexer.<key>}`). |
+| `feed_type` | string | yes |  | Feed protocol: `TORZNAB`, `NEWZNAB`, or `RSS`. |
+| `enabled` | boolean | no |  | Whether the feed is active. |
+| `url` | string | no |  | Feed URL. |
+| `interval` | integer | no |  | Poll interval, minutes. |
+| `timeout` | integer | no |  | Per-request timeout, seconds. |
+| `max_age` | integer | no |  | Ignore items older than this many minutes (`0` = no limit). |
+| `categories` | array of integer | no |  | Torznab/Newznab category ids to fetch. |
+| `api_key` | secret string | no |  | API key for the feed source, where required. Credential — redacted in plan output. |
+| `cookie` | secret string | no |  | Cookie to send with feed requests (private trackers). Credential — redacted in plan output. |
+| `tls_skip_verify` | boolean | no |  | Skip TLS certificate verification. |
+
 ## Types
 
 ### Notification Event
@@ -324,6 +365,13 @@ Allowed values: `PUSH_APPROVED` / `PUSH_REJECTED` / `PUSH_ERROR` / `IRC_DISCONNE
 | `exec_cmd` | string | no |  | Command to run (`EXEC` type). |
 | `exec_args` | string | no |  | Arguments passed to the command. |
 | `exec_expect_status` | integer | no |  | Exit status the command must return to pass. |
+
+### List Filter
+
+| Field | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `id` | integer | no |  | Server filter id — attach a managed filter via `${ref.filter.<name>}`. References a [`filter`](#filter) by name (`${ref.filter.<key>}`). |
+| `name` | string | no |  | Filter display name (read-only; autobrr fills it). |
 
 ### Download Client Basic
 

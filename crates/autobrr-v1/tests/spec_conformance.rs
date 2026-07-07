@@ -78,3 +78,15 @@ conformance!(
     "ReleaseProfileDuplicate",
     "testdata/release_profile_duplicate/config.yaml"
 );
+conformance!(
+    list,
+    resources::list::List,
+    "List",
+    "testdata/list/config.yaml"
+);
+conformance!(
+    feed,
+    resources::feed::Feed,
+    "Feed",
+    "testdata/feed/config.yaml"
+);

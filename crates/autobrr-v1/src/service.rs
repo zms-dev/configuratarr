@@ -12,9 +12,11 @@ use core_macros::service;
 
 use crate::resources::api_key::ApiKey;
 use crate::resources::download_client::DownloadClient;
+use crate::resources::feed::Feed;
 use crate::resources::filter::Filter;
 use crate::resources::indexer::Indexer;
 use crate::resources::irc_network::IrcNetwork;
+use crate::resources::list::List;
 use crate::resources::notification::Notification;
 use crate::resources::proxy::Proxy;
 use crate::resources::release_profile_duplicate::ReleaseProfileDuplicate;
@@ -50,4 +52,10 @@ pub struct AutobrrV1 {
     pub release_profile_duplicates: Vec<ReleaseProfileDuplicate>,
     /// Release-matching filters.
     pub filters: Vec<Filter>,
+    /// Lists — pull wanted titles from *arr / external sources into filters
+    /// (create + update by name; no prune). References download clients + filters.
+    pub lists: Vec<List>,
+    /// RSS/Torznab/Newznab feeds (create + update by name; no prune). Each
+    /// references its feed-type indexer.
+    pub feeds: Vec<Feed>,
 }

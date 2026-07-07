@@ -9,16 +9,14 @@
 //! * `api_key` + `notification` — create-only (via
 //!   [`core_lib::reconcile::create_only`]);
 //! * `filter` (two-step create), `indexer` (server-rewritten identifier +
-//!   write-only settings), and `irc_network` (server-enriched `channels[]` need a
-//!   structural-subset diff) — bespoke `sync = custom`, matched on `name`, no
-//!   prune.
+//!   write-only settings), `irc_network` (server-enriched `channels[]` need a
+//!   structural-subset diff), and `list` / `feed` (redacted secrets on read → a
+//!   structural-subset diff; FKs to download clients / filters / indexers) —
+//!   bespoke `sync = custom`, matched on `name`, create + update, no prune.
 //!
-//! `feeds` and `lists` aren't modelled yet: feeds are coupled to an indexer's
-//! definition (their `indexer_id` doesn't round-trip standalone), and lists carry
-//! required `filters[]`/`client_id` FKs + NOT-NULL columns. autobrr's app config
-//! (`/api/config`) is **not** modelled: it writes `config.toml`, read-only under
-//! the NixOS `services.autobrr` module (own it there via
-//! `services.autobrr.settings`, not here).
+//! autobrr's app config (`/api/config`) is **not** modelled: it writes
+//! `config.toml`, read-only under the NixOS `services.autobrr` module (own it
+//! there via `services.autobrr.settings`, not here).
 
 // create-only collections (reconcile::create_only)
 pub mod api_key;
@@ -35,10 +33,13 @@ pub mod proxy;
 // custom-sync resources + their nested types
 pub mod action;
 pub mod external_filter;
+pub mod feed;
 pub mod filter;
 pub mod filter_indexer;
 pub mod indexer;
 pub mod irc_auth;
 pub mod irc_channel;
 pub mod irc_network;
+pub mod list;
+pub mod list_filter;
 pub mod release_profile_duplicate;

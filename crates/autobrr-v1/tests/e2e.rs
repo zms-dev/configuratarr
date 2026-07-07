@@ -285,6 +285,129 @@ async fn filter_attaches_indexer_by_ref() {
     assert_eq!(second.updated, 0, "second apply is a no-op: {second:?}");
 }
 
+/// Feed create referencing its indexer by `${ref.indexer.<name>}`: proves the
+/// feed→indexer FK resolves out of the RefStore, autobrr stores the resolved
+/// numeric `indexer_id`, and a repeated apply is a no-op (the redacted `api_key`
+/// must not perpetually re-update via the structural-subset diff).
+#[tokio::test]
+#[ignore]
+async fn feed_references_indexer_idempotent() {
+    use core_lib::Service;
+
+    let Some((url, key)) = env() else { return };
+    let cfg = json!({
+        "indexers": [{
+            "name": "cfg-e2e-feedidx",
+            "identifier": "torznab",
+            "implementation": "torznab",
+            "settings": { "url": "https://tracker.example.org/t", "api_key": "K" },
+        }],
+        "feeds": [{
+            "name": "cfg-e2e-feed",
+            "indexer_id": "${ref.indexer.cfg-e2e-feedidx}",
+            "feed_type": "TORZNAB",
+            "enabled": true,
+            "url": "https://tracker.example.org/rss",
+            "interval": 15,
+        }],
+    });
+
+    // Successful apply proves the ref resolved (an unresolved one errors in `run`).
+    run(&url, &key, cfg.clone(), ApplyOptions::default()).await;
+
+    // The feed's indexer_id landed as the indexer's numeric id.
+    let (svc, _) = instance::<AutobrrV1>(&url, &key, json!({}));
+    let client = core_lib::apply::connect(&svc.connection())
+        .await
+        .expect("connect");
+    let indexers: Vec<Value> = client.get("/api/indexer").await.expect("list indexers");
+    let idx_id = indexers
+        .iter()
+        .find(|i| i.get("name").and_then(Value::as_str) == Some("cfg-e2e-feedidx"))
+        .and_then(|i| i.get("id").and_then(Value::as_i64))
+        .expect("indexer present");
+    let feeds: Vec<Value> = client.get("/api/feeds").await.expect("list feeds");
+    let feed = feeds
+        .iter()
+        .find(|f| f.get("name").and_then(Value::as_str) == Some("cfg-e2e-feed"))
+        .expect("feed present");
+    assert_eq!(
+        feed.get("indexer")
+            .and_then(|i| i.get("id"))
+            .and_then(Value::as_i64),
+        Some(idx_id),
+        "feed indexer attached: {feed:?}"
+    );
+
+    // Idempotent — the subset diff over the redacted api_key must settle.
+    let second = run(&url, &key, cfg, ApplyOptions::default()).await;
+    assert_eq!(
+        second.updated, 0,
+        "second feed apply is a no-op: {second:?}"
+    );
+}
+
+/// List create referencing a filter by `${ref.filter.<name>}`: an external
+/// (`PLAINTEXT`) list needs a `url` + at least one filter. Proves the
+/// list→filter FK resolves, the attachment lands, and a repeated apply is a
+/// no-op (the redacted `api_key` must not perpetually re-update).
+#[tokio::test]
+#[ignore]
+async fn list_references_filter_idempotent() {
+    use core_lib::Service;
+
+    let Some((url, key)) = env() else { return };
+    let cfg = json!({
+        "filters": [{
+            "name": "cfg-e2e-listfilter",
+            "enabled": true,
+            "resolutions": ["1080p"],
+        }],
+        "lists": [{
+            "name": "cfg-e2e-list",
+            "list_type": "PLAINTEXT",
+            "enabled": true,
+            "url": "https://example.org/list.txt",
+            "filters": [{ "id": "${ref.filter.cfg-e2e-listfilter}" }],
+        }],
+    });
+
+    // Successful apply proves the filter ref resolved.
+    run(&url, &key, cfg.clone(), ApplyOptions::default()).await;
+
+    // The filter attachment landed server-side as the filter's numeric id.
+    let (svc, _) = instance::<AutobrrV1>(&url, &key, json!({}));
+    let client = core_lib::apply::connect(&svc.connection())
+        .await
+        .expect("connect");
+    let filters: Vec<Value> = client.get("/api/filters").await.expect("list filters");
+    let fid = filters
+        .iter()
+        .find(|f| f.get("name").and_then(Value::as_str) == Some("cfg-e2e-listfilter"))
+        .and_then(|f| f.get("id").and_then(Value::as_i64))
+        .expect("filter present");
+    let lists: Vec<Value> = client.get("/api/lists").await.expect("list lists");
+    let list = lists
+        .iter()
+        .find(|l| l.get("name").and_then(Value::as_str) == Some("cfg-e2e-list"))
+        .expect("list present");
+    let attached: Vec<i64> = list["filters"]
+        .as_array()
+        .map(|a| a.iter().filter_map(|f| f["id"].as_i64()).collect())
+        .unwrap_or_default();
+    assert!(
+        attached.contains(&fid),
+        "list should have filter {fid} attached, got {attached:?}"
+    );
+
+    // Idempotent — the subset diff over the redacted api_key must settle.
+    let second = run(&url, &key, cfg, ApplyOptions::default()).await;
+    assert_eq!(
+        second.updated, 0,
+        "second list apply is a no-op: {second:?}"
+    );
+}
+
 /// Proxy crud: created, then a repeated apply is a no-op (no secret sent, so the
 /// merge is stable), then pruned via DELETE.
 #[tokio::test]

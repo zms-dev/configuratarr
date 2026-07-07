@@ -11,7 +11,9 @@
     }
   ],
   "security": [
-    { "ApiKeyHeader": [] }
+    {
+      "ApiKeyHeader": []
+    }
   ],
   "components": {
     "securitySchemes": {
@@ -30,16 +32,26 @@
       "FilterIndexer": {
         "type": "object",
         "properties": {
-          "id": { "type": "integer" },
-          "name": { "type": "string" },
-          "identifier": { "type": "string" }
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "identifier": {
+            "type": "string"
+          }
         }
       },
       "Action": {
         "type": "object",
         "properties": {
-          "id": { "type": "integer" },
-          "name": { "type": "string" },
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
           "type": {
             "type": "string",
             "enum": [
@@ -59,296 +71,615 @@
               "TEST"
             ]
           },
-          "enabled": { "type": "boolean" },
-          "category": { "type": "string" },
-          "tags": { "type": "string" },
-          "save_path": { "type": "string" },
-          "reannounce_interval": { "type": "integer" },
-          "reannounce_max_attempts": { "type": "integer" },
-          "client_id": { "type": "integer" },
-          "webhook_host": { "type": "string" },
-          "webhook_method": { "type": "string" },
-          "webhook_type": { "type": "string" },
-          "webhook_data": { "type": "string" },
+          "enabled": {
+            "type": "boolean"
+          },
+          "category": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "string"
+          },
+          "save_path": {
+            "type": "string"
+          },
+          "reannounce_interval": {
+            "type": "integer"
+          },
+          "reannounce_max_attempts": {
+            "type": "integer"
+          },
+          "client_id": {
+            "type": "integer"
+          },
+          "webhook_host": {
+            "type": "string"
+          },
+          "webhook_method": {
+            "type": "string"
+          },
+          "webhook_type": {
+            "type": "string"
+          },
+          "webhook_data": {
+            "type": "string"
+          },
           "webhook_headers": {
             "type": "array",
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
           },
-          "exec_cmd": { "type": "string" },
-          "exec_args": { "type": "string" },
-          "watch_folder": { "type": "string" }
+          "exec_cmd": {
+            "type": "string"
+          },
+          "exec_args": {
+            "type": "string"
+          },
+          "watch_folder": {
+            "type": "string"
+          }
         }
       },
       "ExternalFilter": {
         "type": "object",
         "properties": {
-          "id": { "type": "integer" },
-          "name": { "type": "string" },
-          "index": { "type": "integer" },
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "index": {
+            "type": "integer"
+          },
           "type": {
             "type": "string",
-            "enum": ["WEBHOOK", "EXEC"]
+            "enum": [
+              "WEBHOOK",
+              "EXEC"
+            ]
           },
-          "enabled": { "type": "boolean" },
-          "webhook_host": { "type": "string" },
-          "webhook_method": { "type": "string" },
-          "webhook_data": { "type": "string" },
-          "webhook_expect_status": { "type": "integer" },
-          "exec_cmd": { "type": "string" },
-          "exec_args": { "type": "string" },
-          "exec_expect_status": { "type": "integer" }
+          "enabled": {
+            "type": "boolean"
+          },
+          "webhook_host": {
+            "type": "string"
+          },
+          "webhook_method": {
+            "type": "string"
+          },
+          "webhook_data": {
+            "type": "string"
+          },
+          "webhook_expect_status": {
+            "type": "integer"
+          },
+          "exec_cmd": {
+            "type": "string"
+          },
+          "exec_args": {
+            "type": "string"
+          },
+          "exec_expect_status": {
+            "type": "integer"
+          }
         }
       },
       "Filter": {
         "type": "object",
         "properties": {
-          "id": { "type": "integer" },
-          "name": { "type": "string" },
-          "enabled": { "type": "boolean" },
-          "priority": { "type": "integer" },
-          "use_regex": { "type": "boolean" },
-          "years": { "type": "string" },
-          "seasons": { "type": "string" },
-          "episodes": { "type": "string" },
-          "match_releases": { "type": "string" },
-          "except_releases": { "type": "string" },
-          "match_release_groups": { "type": "string" },
-          "except_release_groups": { "type": "string" },
-          "match_categories": { "type": "string" },
-          "except_categories": { "type": "string" },
-          "tags": { "type": "string" },
-          "except_tags": { "type": "string" },
-          "tags_match_logic": { "type": "string" },
-          "except_tags_match_logic": { "type": "string" },
-          "smart_episode": { "type": "boolean" },
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "priority": {
+            "type": "integer"
+          },
+          "use_regex": {
+            "type": "boolean"
+          },
+          "years": {
+            "type": "string"
+          },
+          "seasons": {
+            "type": "string"
+          },
+          "episodes": {
+            "type": "string"
+          },
+          "match_releases": {
+            "type": "string"
+          },
+          "except_releases": {
+            "type": "string"
+          },
+          "match_release_groups": {
+            "type": "string"
+          },
+          "except_release_groups": {
+            "type": "string"
+          },
+          "match_categories": {
+            "type": "string"
+          },
+          "except_categories": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "string"
+          },
+          "except_tags": {
+            "type": "string"
+          },
+          "tags_match_logic": {
+            "type": "string"
+          },
+          "except_tags_match_logic": {
+            "type": "string"
+          },
+          "smart_episode": {
+            "type": "boolean"
+          },
           "resolutions": {
             "type": "array",
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
           },
           "codecs": {
             "type": "array",
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
           },
           "sources": {
             "type": "array",
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
           },
           "containers": {
             "type": "array",
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
           },
           "match_hdr": {
             "type": "array",
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
           },
           "except_hdr": {
             "type": "array",
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
           },
           "match_other": {
             "type": "array",
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
           },
           "except_other": {
             "type": "array",
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
           },
           "match_language": {
             "type": "array",
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
           },
           "except_language": {
             "type": "array",
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
           },
           "formats": {
             "type": "array",
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
           },
           "quality": {
             "type": "array",
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
           },
           "media": {
             "type": "array",
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
           },
           "match_release_types": {
             "type": "array",
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
           },
           "origins": {
             "type": "array",
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
           },
           "except_origins": {
             "type": "array",
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
           },
-          "min_size": { "type": "string" },
-          "max_size": { "type": "string" },
-          "delay": { "type": "integer" },
+          "min_size": {
+            "type": "string"
+          },
+          "max_size": {
+            "type": "string"
+          },
+          "delay": {
+            "type": "integer"
+          },
           "indexers": {
             "type": "array",
-            "items": { "$ref": "#/components/schemas/FilterIndexer" }
+            "items": {
+              "$ref": "#/components/schemas/FilterIndexer"
+            }
           },
           "actions": {
             "type": "array",
-            "items": { "$ref": "#/components/schemas/Action" }
+            "items": {
+              "$ref": "#/components/schemas/Action"
+            }
           },
           "external": {
             "type": "array",
-            "items": { "$ref": "#/components/schemas/ExternalFilter" }
+            "items": {
+              "$ref": "#/components/schemas/ExternalFilter"
+            }
           }
         }
       },
       "FilterCreate": {
         "type": "object",
-        "required": ["name"],
+        "required": [
+          "name"
+        ],
         "properties": {
-          "name": { "type": "string" },
-          "enabled": { "type": "boolean" },
+          "name": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
           "resolutions": {
             "type": "array",
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
           },
           "codecs": {
             "type": "array",
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
           },
           "sources": {
             "type": "array",
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
           },
           "containers": {
             "type": "array",
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
           },
           "origins": {
             "type": "array",
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
       "EnabledBody": {
         "type": "object",
-        "required": ["enabled"],
+        "required": [
+          "enabled"
+        ],
         "properties": {
-          "enabled": { "type": "boolean" }
+          "enabled": {
+            "type": "boolean"
+          }
         }
       },
       "Indexer": {
         "type": "object",
         "properties": {
-          "id": { "type": "integer" },
-          "name": { "type": "string" },
-          "identifier": { "type": "string" },
-          "enabled": { "type": "boolean" },
-          "type": { "type": "string" }
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "identifier": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "type": {
+            "type": "string"
+          }
         }
       },
       "IrcNetwork": {
         "type": "object",
         "properties": {
-          "id": { "type": "integer" },
-          "name": { "type": "string" },
-          "server": { "type": "string" },
-          "port": { "type": "integer" },
-          "tls": { "type": "boolean" },
-          "enabled": { "type": "boolean" },
-          "healthy": { "type": "boolean" },
-          "connected": { "type": "boolean" }
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "server": {
+            "type": "string"
+          },
+          "port": {
+            "type": "integer"
+          },
+          "tls": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "healthy": {
+            "type": "boolean"
+          },
+          "connected": {
+            "type": "boolean"
+          }
         }
       },
       "Feed": {
         "type": "object",
         "properties": {
-          "id": { "type": "integer" },
-          "name": { "type": "string" },
-          "type": { "type": "string" },
-          "enabled": { "type": "boolean" },
-          "url": { "type": "string" },
-          "interval": { "type": "integer" },
-          "indexer_id": { "type": "integer" }
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "url": {
+            "type": "string"
+          },
+          "interval": {
+            "type": "integer"
+          },
+          "indexer_id": {
+            "type": "integer"
+          },
+          "timeout": {
+            "type": "integer"
+          },
+          "max_age": {
+            "type": "integer"
+          },
+          "categories": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "api_key": {
+            "type": "string"
+          },
+          "cookie": {
+            "type": "string"
+          },
+          "tls_skip_verify": {
+            "type": "boolean"
+          }
         }
       },
       "Proxy": {
         "type": "object",
         "properties": {
-          "id": { "type": "integer" },
-          "name": { "type": "string" },
-          "enabled": { "type": "boolean" },
-          "type": { "type": "string" },
-          "addr": { "type": "string" },
-          "user": { "type": "string" },
-          "pass": { "type": "string" },
-          "timeout": { "type": "integer" }
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "type": {
+            "type": "string"
+          },
+          "addr": {
+            "type": "string"
+          },
+          "user": {
+            "type": "string"
+          },
+          "pass": {
+            "type": "string"
+          },
+          "timeout": {
+            "type": "integer"
+          }
         }
       },
       "ReleaseProfileDuplicate": {
         "type": "object",
         "properties": {
-          "id": { "type": "integer" },
-          "name": { "type": "string" },
-          "protocol": { "type": "boolean" },
-          "release_name": { "type": "boolean" },
-          "hash": { "type": "boolean" },
-          "title": { "type": "boolean" },
-          "sub_title": { "type": "boolean" },
-          "year": { "type": "boolean" },
-          "month": { "type": "boolean" },
-          "day": { "type": "boolean" },
-          "source": { "type": "boolean" },
-          "resolution": { "type": "boolean" },
-          "codec": { "type": "boolean" },
-          "container": { "type": "boolean" },
-          "dynamic_range": { "type": "boolean" },
-          "audio": { "type": "boolean" },
-          "group": { "type": "boolean" },
-          "season": { "type": "boolean" },
-          "episode": { "type": "boolean" },
-          "website": { "type": "boolean" },
-          "proper": { "type": "boolean" },
-          "repack": { "type": "boolean" },
-          "edition": { "type": "boolean" },
-          "hybrid": { "type": "boolean" },
-          "language": { "type": "boolean" }
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "protocol": {
+            "type": "boolean"
+          },
+          "release_name": {
+            "type": "boolean"
+          },
+          "hash": {
+            "type": "boolean"
+          },
+          "title": {
+            "type": "boolean"
+          },
+          "sub_title": {
+            "type": "boolean"
+          },
+          "year": {
+            "type": "boolean"
+          },
+          "month": {
+            "type": "boolean"
+          },
+          "day": {
+            "type": "boolean"
+          },
+          "source": {
+            "type": "boolean"
+          },
+          "resolution": {
+            "type": "boolean"
+          },
+          "codec": {
+            "type": "boolean"
+          },
+          "container": {
+            "type": "boolean"
+          },
+          "dynamic_range": {
+            "type": "boolean"
+          },
+          "audio": {
+            "type": "boolean"
+          },
+          "group": {
+            "type": "boolean"
+          },
+          "season": {
+            "type": "boolean"
+          },
+          "episode": {
+            "type": "boolean"
+          },
+          "website": {
+            "type": "boolean"
+          },
+          "proper": {
+            "type": "boolean"
+          },
+          "repack": {
+            "type": "boolean"
+          },
+          "edition": {
+            "type": "boolean"
+          },
+          "hybrid": {
+            "type": "boolean"
+          },
+          "language": {
+            "type": "boolean"
+          }
         }
       },
       "DownloadClientBasic": {
         "type": "object",
         "properties": {
-          "auth": { "type": "boolean" },
-          "username": { "type": "string" },
-          "password": { "type": "string" }
+          "auth": {
+            "type": "boolean"
+          },
+          "username": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          }
         }
       },
       "DownloadClientRules": {
         "type": "object",
         "properties": {
-          "enabled": { "type": "boolean" },
-          "max_active_downloads": { "type": "integer" },
-          "ignore_slow_torrents": { "type": "boolean" },
-          "ignore_slow_torrents_condition": { "type": "string" },
-          "download_speed_threshold": { "type": "integer" },
-          "upload_speed_threshold": { "type": "integer" }
+          "enabled": {
+            "type": "boolean"
+          },
+          "max_active_downloads": {
+            "type": "integer"
+          },
+          "ignore_slow_torrents": {
+            "type": "boolean"
+          },
+          "ignore_slow_torrents_condition": {
+            "type": "string"
+          },
+          "download_speed_threshold": {
+            "type": "integer"
+          },
+          "upload_speed_threshold": {
+            "type": "integer"
+          }
         }
       },
       "DownloadClientSettings": {
         "type": "object",
         "properties": {
-          "apikey": { "type": "string" },
-          "basic": { "$ref": "#/components/schemas/DownloadClientBasic" },
-          "rules": { "$ref": "#/components/schemas/DownloadClientRules" },
-          "external_download_client_id": { "type": "integer" }
+          "apikey": {
+            "type": "string"
+          },
+          "basic": {
+            "$ref": "#/components/schemas/DownloadClientBasic"
+          },
+          "rules": {
+            "$ref": "#/components/schemas/DownloadClientRules"
+          },
+          "external_download_client_id": {
+            "type": "integer"
+          }
         }
       },
       "DownloadClient": {
         "type": "object",
-        "required": ["name", "type", "enabled", "host"],
+        "required": [
+          "name",
+          "type",
+          "enabled",
+          "host"
+        ],
         "properties": {
-          "id": { "type": "integer" },
-          "name": { "type": "string" },
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
           "type": {
             "type": "string",
             "enum": [
@@ -366,14 +697,30 @@
               "WATCH_FOLDER"
             ]
           },
-          "enabled": { "type": "boolean" },
-          "host": { "type": "string" },
-          "port": { "type": "integer" },
-          "tls": { "type": "boolean" },
-          "tls_skip_verify": { "type": "boolean" },
-          "username": { "type": "string" },
-          "password": { "type": "string" },
-          "settings": { "$ref": "#/components/schemas/DownloadClientSettings" }
+          "enabled": {
+            "type": "boolean"
+          },
+          "host": {
+            "type": "string"
+          },
+          "port": {
+            "type": "integer"
+          },
+          "tls": {
+            "type": "boolean"
+          },
+          "tls_skip_verify": {
+            "type": "boolean"
+          },
+          "username": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/DownloadClientSettings"
+          }
         }
       },
       "NotificationEvent": {
@@ -389,35 +736,75 @@
       },
       "Notification": {
         "type": "object",
-        "required": ["name", "type", "enabled", "events"],
+        "required": [
+          "name",
+          "type",
+          "enabled",
+          "events"
+        ],
         "properties": {
-          "id": { "type": "integer" },
-          "name": { "type": "string" },
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
           "type": {
             "type": "string",
-            "enum": ["NOTIFIARR", "DISCORD", "TELEGRAM", "GOTIFY", "PUSHOVER", "SLACK", "NTFY", "SHOUTRRR"]
+            "enum": [
+              "NOTIFIARR",
+              "DISCORD",
+              "TELEGRAM",
+              "GOTIFY",
+              "PUSHOVER",
+              "SLACK",
+              "NTFY",
+              "SHOUTRRR"
+            ]
           },
-          "enabled": { "type": "boolean" },
+          "enabled": {
+            "type": "boolean"
+          },
           "events": {
             "type": "array",
-            "items": { "$ref": "#/components/schemas/NotificationEvent" }
+            "items": {
+              "$ref": "#/components/schemas/NotificationEvent"
+            }
           },
-          "webhook": { "type": "string" },
-          "api_key": { "type": "string" },
-          "token": { "type": "string" },
-          "channel": { "type": "string" },
-          "topic": { "type": "string" },
-          "host": { "type": "string" }
+          "webhook": {
+            "type": "string"
+          },
+          "api_key": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "topic": {
+            "type": "string"
+          },
+          "host": {
+            "type": "string"
+          }
         }
       },
       "ApiKey": {
         "type": "object",
         "properties": {
-          "name": { "type": "string" },
-          "key": { "type": "string" },
+          "name": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
           "scopes": {
             "type": "array",
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
           },
           "created_at": {
             "type": "string",
@@ -427,32 +814,149 @@
       },
       "ApiKeyCreate": {
         "type": "object",
-        "required": ["name"],
+        "required": [
+          "name"
+        ],
         "properties": {
-          "name": { "type": "string" },
+          "name": {
+            "type": "string"
+          },
           "scopes": {
             "type": "array",
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
       "Config": {
         "type": "object",
         "properties": {
-          "host": { "type": "string" },
-          "port": { "type": "integer" },
-          "log_level": { "type": "string" },
-          "log_path": { "type": "string" },
-          "check_for_updates": { "type": "boolean" },
-          "version": { "type": "string" },
-          "database": { "type": "string" }
+          "host": {
+            "type": "string"
+          },
+          "port": {
+            "type": "integer"
+          },
+          "log_level": {
+            "type": "string"
+          },
+          "log_path": {
+            "type": "string"
+          },
+          "check_for_updates": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": "string"
+          },
+          "database": {
+            "type": "string"
+          }
         }
       },
       "ConfigUpdate": {
         "type": "object",
         "properties": {
-          "log_level": { "type": "string" },
-          "check_for_updates": { "type": "boolean" }
+          "log_level": {
+            "type": "string"
+          },
+          "check_for_updates": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ListFilter": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "List": {
+        "type": "object",
+        "required": [
+          "name",
+          "type"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "RADARR",
+              "SONARR",
+              "LIDARR",
+              "READARR",
+              "WHISPARR",
+              "MDBLIST",
+              "METACRITIC",
+              "PLAINTEXT",
+              "TRAKT",
+              "STEAM",
+              "ANILIST"
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "client_id": {
+            "type": "integer"
+          },
+          "url": {
+            "type": "string"
+          },
+          "headers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "api_key": {
+            "type": "string"
+          },
+          "filters": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ListFilter"
+            }
+          },
+          "match_release": {
+            "type": "boolean"
+          },
+          "tags_included": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tags_excluded": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "include_unmonitored": {
+            "type": "boolean"
+          },
+          "include_alternate_titles": {
+            "type": "boolean"
+          },
+          "include_year": {
+            "type": "boolean"
+          },
+          "skip_clean_sanitize": {
+            "type": "boolean"
+          }
         }
       }
     }
@@ -463,7 +967,9 @@
         "operationId": "get_healthz_liveness",
         "summary": "Liveness check",
         "responses": {
-          "200": { "description": "Application is running" }
+          "200": {
+            "description": "Application is running"
+          }
         }
       }
     },
@@ -472,8 +978,12 @@
         "operationId": "get_healthz_readiness",
         "summary": "Readiness check",
         "responses": {
-          "200": { "description": "Application and dependencies are ready" },
-          "500": { "description": "One or more dependencies are unavailable" }
+          "200": {
+            "description": "Application and dependencies are ready"
+          },
+          "500": {
+            "description": "One or more dependencies are unavailable"
+          }
         }
       }
     },
@@ -488,7 +998,9 @@
               "application/json": {
                 "schema": {
                   "type": "array",
-                  "items": { "$ref": "#/components/schemas/Filter" }
+                  "items": {
+                    "$ref": "#/components/schemas/Filter"
+                  }
                 }
               }
             }
@@ -502,7 +1014,9 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/FilterCreate" }
+              "schema": {
+                "$ref": "#/components/schemas/FilterCreate"
+              }
             }
           }
         },
@@ -511,7 +1025,9 @@
             "description": "Created filter",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/Filter" }
+                "schema": {
+                  "$ref": "#/components/schemas/Filter"
+                }
               }
             }
           }
@@ -527,14 +1043,18 @@
             "name": "filterId",
             "in": "path",
             "required": true,
-            "schema": { "type": "integer" }
+            "schema": {
+              "type": "integer"
+            }
           }
         ],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/Filter" }
+              "schema": {
+                "$ref": "#/components/schemas/Filter"
+              }
             }
           }
         },
@@ -543,7 +1063,9 @@
             "description": "Updated filter",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/Filter" }
+                "schema": {
+                  "$ref": "#/components/schemas/Filter"
+                }
               }
             }
           }
@@ -557,11 +1079,15 @@
             "name": "filterId",
             "in": "path",
             "required": true,
-            "schema": { "type": "integer" }
+            "schema": {
+              "type": "integer"
+            }
           }
         ],
         "responses": {
-          "204": { "description": "Filter deleted" }
+          "204": {
+            "description": "Filter deleted"
+          }
         }
       }
     },
@@ -574,19 +1100,25 @@
             "name": "filterId",
             "in": "path",
             "required": true,
-            "schema": { "type": "integer" }
+            "schema": {
+              "type": "integer"
+            }
           }
         ],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/EnabledBody" }
+              "schema": {
+                "$ref": "#/components/schemas/EnabledBody"
+              }
             }
           }
         },
         "responses": {
-          "200": { "description": "Filter status updated" }
+          "200": {
+            "description": "Filter status updated"
+          }
         }
       }
     },
@@ -601,7 +1133,9 @@
               "application/json": {
                 "schema": {
                   "type": "array",
-                  "items": { "$ref": "#/components/schemas/Indexer" }
+                  "items": {
+                    "$ref": "#/components/schemas/Indexer"
+                  }
                 }
               }
             }
@@ -618,19 +1152,25 @@
             "name": "indexerId",
             "in": "path",
             "required": true,
-            "schema": { "type": "integer" }
+            "schema": {
+              "type": "integer"
+            }
           }
         ],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/EnabledBody" }
+              "schema": {
+                "$ref": "#/components/schemas/EnabledBody"
+              }
             }
           }
         },
         "responses": {
-          "200": { "description": "Indexer status updated" }
+          "200": {
+            "description": "Indexer status updated"
+          }
         }
       }
     },
@@ -645,7 +1185,9 @@
               "application/json": {
                 "schema": {
                   "type": "array",
-                  "items": { "$ref": "#/components/schemas/IrcNetwork" }
+                  "items": {
+                    "$ref": "#/components/schemas/IrcNetwork"
+                  }
                 }
               }
             }
@@ -662,11 +1204,15 @@
             "name": "networkId",
             "in": "path",
             "required": true,
-            "schema": { "type": "integer" }
+            "schema": {
+              "type": "integer"
+            }
           }
         ],
         "responses": {
-          "200": { "description": "Network restarted" }
+          "200": {
+            "description": "Network restarted"
+          }
         }
       }
     },
@@ -681,7 +1227,9 @@
               "application/json": {
                 "schema": {
                   "type": "array",
-                  "items": { "$ref": "#/components/schemas/Feed" }
+                  "items": {
+                    "$ref": "#/components/schemas/Feed"
+                  }
                 }
               }
             }
@@ -698,19 +1246,25 @@
             "name": "feedId",
             "in": "path",
             "required": true,
-            "schema": { "type": "integer" }
+            "schema": {
+              "type": "integer"
+            }
           }
         ],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/EnabledBody" }
+              "schema": {
+                "$ref": "#/components/schemas/EnabledBody"
+              }
             }
           }
         },
         "responses": {
-          "200": { "description": "Feed status updated" }
+          "200": {
+            "description": "Feed status updated"
+          }
         }
       }
     },
@@ -723,11 +1277,15 @@
             "name": "feedId",
             "in": "path",
             "required": true,
-            "schema": { "type": "integer" }
+            "schema": {
+              "type": "integer"
+            }
           }
         ],
         "responses": {
-          "204": { "description": "Cache cleared" }
+          "204": {
+            "description": "Cache cleared"
+          }
         }
       }
     },
@@ -742,7 +1300,9 @@
               "application/json": {
                 "schema": {
                   "type": "array",
-                  "items": { "$ref": "#/components/schemas/DownloadClient" }
+                  "items": {
+                    "$ref": "#/components/schemas/DownloadClient"
+                  }
                 }
               }
             }
@@ -756,7 +1316,9 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/DownloadClient" }
+              "schema": {
+                "$ref": "#/components/schemas/DownloadClient"
+              }
             }
           }
         },
@@ -765,7 +1327,9 @@
             "description": "Created download client",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/DownloadClient" }
+                "schema": {
+                  "$ref": "#/components/schemas/DownloadClient"
+                }
               }
             }
           }
@@ -778,7 +1342,9 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/DownloadClient" }
+              "schema": {
+                "$ref": "#/components/schemas/DownloadClient"
+              }
             }
           }
         },
@@ -787,7 +1353,9 @@
             "description": "Updated download client",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/DownloadClient" }
+                "schema": {
+                  "$ref": "#/components/schemas/DownloadClient"
+                }
               }
             }
           }
@@ -805,7 +1373,9 @@
               "application/json": {
                 "schema": {
                   "type": "array",
-                  "items": { "$ref": "#/components/schemas/Notification" }
+                  "items": {
+                    "$ref": "#/components/schemas/Notification"
+                  }
                 }
               }
             }
@@ -819,7 +1389,9 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/Notification" }
+              "schema": {
+                "$ref": "#/components/schemas/Notification"
+              }
             }
           }
         },
@@ -828,7 +1400,9 @@
             "description": "Created notification agent",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/Notification" }
+                "schema": {
+                  "$ref": "#/components/schemas/Notification"
+                }
               }
             }
           }
@@ -846,7 +1420,9 @@
               "application/json": {
                 "schema": {
                   "type": "array",
-                  "items": { "$ref": "#/components/schemas/ApiKey" }
+                  "items": {
+                    "$ref": "#/components/schemas/ApiKey"
+                  }
                 }
               }
             }
@@ -860,7 +1436,9 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/ApiKeyCreate" }
+              "schema": {
+                "$ref": "#/components/schemas/ApiKeyCreate"
+              }
             }
           }
         },
@@ -869,7 +1447,9 @@
             "description": "Created API key",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/ApiKey" }
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKey"
+                }
               }
             }
           }
@@ -885,11 +1465,15 @@
             "name": "olderThan",
             "in": "query",
             "required": true,
-            "schema": { "type": "integer" }
+            "schema": {
+              "type": "integer"
+            }
           }
         ],
         "responses": {
-          "204": { "description": "Release history cleared" }
+          "204": {
+            "description": "Release history cleared"
+          }
         }
       }
     },
@@ -902,7 +1486,9 @@
             "description": "Current configuration",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/Config" }
+                "schema": {
+                  "$ref": "#/components/schemas/Config"
+                }
               }
             }
           }
@@ -915,12 +1501,70 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/ConfigUpdate" }
+              "schema": {
+                "$ref": "#/components/schemas/ConfigUpdate"
+              }
             }
           }
         },
         "responses": {
-          "200": { "description": "Configuration updated" }
+          "200": {
+            "description": "Configuration updated"
+          }
+        }
+      }
+    },
+    "/lists": {
+      "get": {
+        "summary": "List lists",
+        "responses": {
+          "200": {
+            "description": "ok"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create list",
+        "responses": {
+          "200": {
+            "description": "ok"
+          }
+        }
+      }
+    },
+    "/lists/{listId}": {
+      "put": {
+        "summary": "Update list",
+        "responses": {
+          "200": {
+            "description": "ok"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete list",
+        "responses": {
+          "204": {
+            "description": "ok"
+          }
+        }
+      }
+    },
+    "/feeds/{feedId}": {
+      "put": {
+        "summary": "Update feed",
+        "responses": {
+          "200": {
+            "description": "ok"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete feed",
+        "responses": {
+          "204": {
+            "description": "ok"
+          }
         }
       }
     }
