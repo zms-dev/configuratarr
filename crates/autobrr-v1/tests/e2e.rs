@@ -363,10 +363,13 @@ async fn list_references_filter_idempotent() {
             "enabled": true,
             "resolutions": ["1080p"],
         }],
+        // `enabled: false` so autobrr doesn't fetch titles from `url` on
+        // create/update — the e2e VM is hermetic (no DNS), and the fetch is the
+        // only network dependency; the filter attachment + diff don't need it.
         "lists": [{
             "name": "cfg-e2e-list",
             "list_type": "PLAINTEXT",
-            "enabled": true,
+            "enabled": false,
             "url": "https://example.org/list.txt",
             "filters": [{ "id": "${ref.filter.cfg-e2e-listfilter}" }],
         }],
