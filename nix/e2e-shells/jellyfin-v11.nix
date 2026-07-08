@@ -61,9 +61,35 @@ pkgs.mkShell {
 
       export JELLYFIN_URL="http://localhost:8096"
       export JELLYFIN_API_KEY="$_JF_KEY"
-      echo "  Jellyfin ready — $JELLYFIN_URL"
-      echo ""
-      echo "  cargo nextest run -p jellyfin-v11 --run-ignored all -j1"
+
+      # Gate handoff on the *authenticated* endpoint the engine actually uses
+      # (raw key in `X-Emby-Token` against `/System/Info`, its declared health).
+      # `/System/Info/Public` (the only thing `_jf_wait` checked) answers while
+      # Jellyfin is still settling after the startup wizard, so the first e2e
+      # apply could otherwise catch a post-wizard flap (transient 5xx). Require a
+      # few consecutive OKs so a single lucky response doesn't count as ready.
+      _jf_wait_ready() {
+        local ok=0 i=0
+        while [ $i -lt 60 ]; do
+          if curl -sf -H "X-Emby-Token: $_JF_KEY" \
+            http://localhost:8096/System/Info > /dev/null 2>&1; then
+            ok=$((ok + 1)); [ "$ok" -ge 3 ] && return 0
+          else
+            ok=0
+          fi
+          sleep 1; i=$((i + 1))
+        done
+        return 1
+      }
+
+      if _jf_wait_ready; then
+        echo "  Jellyfin ready — $JELLYFIN_URL"
+        echo ""
+        echo "  cargo nextest run -p jellyfin-v11 --run-ignored all -j1"
+      else
+        echo "  Jellyfin authenticated API never stabilised — check $_JF_DATA/jellyfin.log"
+        kill "$_JF_PID" 2>/dev/null
+      fi
     else
       echo "  Jellyfin failed to start — check $_JF_DATA/jellyfin.log"
       kill "$_JF_PID" 2>/dev/null

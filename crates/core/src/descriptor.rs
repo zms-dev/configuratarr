@@ -160,6 +160,18 @@ pub struct FieldDescriptor<T: 'static> {
     /// `implementationName`, `message`). Id fields are implicitly read-only.
     pub read_only: bool,
 
+    /// `#[wire(null)]` — emit a `None` optional as JSON `null` rather than
+    /// omitting the key. For APIs whose diff/replace compares the *whole* object
+    /// (bazarr's form-encoded settings round-trip nulls verbatim), so an omitted
+    /// key would make the desired object structurally differ from the live one.
+    /// Standard codec only.
+    pub emit_none: bool,
+
+    /// `#[wire(int)]` — encode a `bool` (or `Option<bool>`) as the integer `0`/`1`
+    /// on the wire, and decode `0`/`1` back to a bool. For APIs that store
+    /// booleans as ints (bazarr `originalFormat`). Standard codec only.
+    pub as_int: bool,
+
     /// Non-zero `#[default(expr)]`. `None` means type default. Applied by the
     /// config decode for absent keys, and read by doc-gen.
     pub default: Option<DefaultLit>,

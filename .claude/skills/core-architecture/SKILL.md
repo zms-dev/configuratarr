@@ -60,6 +60,11 @@ Extension model: **select** (name an impl) → **register** (add an enum variant
 - **Standard** — snake→camelCase JSON object by default; a resource may set `case = pascal`
   (`ResourceDescriptor.case`, applied in `wire_key`) for .NET-style PascalCase APIs (Jellyfin). Casing is
   descriptor *data*, not macro behaviour — one implementation (`to_camel_case`; pascal = +upcase first).
+  Two field-level wire options (also descriptor data, standard codec only): `#[wire(null)]` emits a `None`
+  optional as an explicit JSON `null` instead of omitting the key (`FieldDescriptor.emit_none`);
+  `#[wire(int)]` renders a `bool` as the int `0`/`1` and decodes it back (`FieldDescriptor.as_int`). They
+  compose — added so a `sync = custom` reconcile can `engine::encode` instead of hand-rolling `Value`
+  translation (bazarr `LanguageProfile`/`Notifier`).
 - **FieldsBlob** — `{implementation, configContract, fields:[{name,value}]}`; each typed field → one entry. For an **open** key set (no fixed struct — e.g. Prowlarr Cardigann indexers), a `#[fields_map]` `Json` field on a Standard struct (`RawProvider`) carries a `name: value` map that the standard wire codec splays to / collects from the same `fields:[{name,value}]` array.
 - **TaggedByImpl** — reads a discriminator key, delegates to the matching variant's codec.
 - **StringEnum** — unit enum ↔ bare wire string.

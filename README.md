@@ -19,8 +19,8 @@ Reads a desired-state YAML file, diffs it against each app's live REST API, and 
 | Sonarr | v3 | `sonarr-v3` | ✅ Supported |
 | Lidarr | v1 | `lidarr-v1` | ✅ Supported |
 | Prowlarr | v1 | `prowlarr-v1` | ✅ Supported |
-| Jellyfin | v10.11 | `jellyfin-v11` | ✅ Supported (server config) |
-| Bazarr | v1 | `bazarr-v1` | ✅ Supported (settings) |
+| Jellyfin | v10.11 | `jellyfin-v11` | ✅ Supported |
+| Bazarr | v1 | `bazarr-v1` | ✅ Supported |
 | Autobrr | v1 | `autobrr-v1` | ✅ Supported |
 | Readarr | — | — | 🚧 Planned |
 

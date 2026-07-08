@@ -498,6 +498,12 @@ pub struct FieldAttrs {
     pub is_key: bool,
     pub wire_name: Option<String>,
     pub read_only: bool,
+    /// `#[wire(null)]` — emit a `None` optional as JSON `null` instead of
+    /// omitting the key (standard codec).
+    pub emit_none: bool,
+    /// `#[wire(int)]` — encode a bool as the integer `0`/`1` and decode it back
+    /// (standard codec).
+    pub as_int: bool,
     pub flatten: bool,
     /// `#[fields_map]` — a `Json` object field encoded as a `[{name, value}]`
     /// array on the wire (the *arr provider fields blob).
@@ -561,6 +567,12 @@ impl FieldAttrs {
                         }
                         darling::ast::NestedMeta::Meta(Meta::Path(p)) if p.is_ident("flatten") => {
                             out.flatten = true;
+                        }
+                        darling::ast::NestedMeta::Meta(Meta::Path(p)) if p.is_ident("null") => {
+                            out.emit_none = true;
+                        }
+                        darling::ast::NestedMeta::Meta(Meta::Path(p)) if p.is_ident("int") => {
+                            out.as_int = true;
                         }
                         darling::ast::NestedMeta::Meta(Meta::NameValue(nv))
                             if nv.path.is_ident("name") =>

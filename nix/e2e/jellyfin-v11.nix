@@ -85,6 +85,19 @@ pkgs.testers.nixosTest {
       k["AccessToken"] for k in json.loads(keys)["Items"] if k["AppName"] == "configuratarr"
     )
 
+    # Gate on the *authenticated* endpoint the engine actually uses (raw key in
+    # `X-Emby-Token` against `/System/Info`, its declared health) settling before
+    # handing off — `/System/Info/Public` answers while Jellyfin is still settling
+    # after the startup wizard, so the first apply could catch a post-wizard flap.
+    # The inner loop requires 3 consecutive OKs; `wait_until_succeeds` retries the
+    # whole check until it holds, so a single lucky response doesn't count.
+    machine.wait_until_succeeds(
+      "for _ in 1 2 3; do "
+      f"curl -sf http://localhost:8096/System/Info -H 'X-Emby-Token: {api_key}' >/dev/null "
+      "|| exit 1; sleep 1; done",
+      timeout=120,
+    )
+
     machine.succeed(
       f"JELLYFIN_URL=http://localhost:8096 JELLYFIN_API_KEY={api_key} "
       # --test-threads=1: e2e tests share one live instance; run serially.

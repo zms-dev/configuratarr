@@ -78,6 +78,16 @@ Enabled subtitle languages + the language-profile set, reconciled together
 | `enabled_languages` | array of string | no |  | Enabled subtitle-language codes (alpha-2, e.g. `en`). Replaces the enabled set; declare the languages your profiles reference. |
 | `language_profiles` | array of [`language_profile`](#language-profile) | no |  | Language profiles (full-replace by `profile_id`): the declared list is the complete desired set; bazarr deletes any profile not listed. |
 
+### Notifications
+
+Notification providers, reconciled sparsely by `name`: only the providers you
+declare are updated; bazarr's other providers are left as they are. Written
+via the settings POST.
+
+| Field | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `providers` | array of [`notifier`](#notifier) | no |  | Notification providers to manage (sparse, keyed by `name`). Each declared provider is updated; providers you don't list are left untouched. |
+
 ## Types
 
 ### General
@@ -552,8 +562,16 @@ Enabled subtitle languages + the language-profile set, reconciled together
 | `items` | array of [`language_profile_item`](#language-profile-item) | no |  | The languages this profile wants, in priority order. |
 | `must_contain` | array of string | no |  | Release must contain all of these strings. |
 | `must_not_contain` | array of string | no |  | Release must contain none of these strings. |
-| `original_format` | boolean | no |  | Prefer the original-format subtitle. |
+| `original_format` | boolean | no |  | Prefer the original-format subtitle. Stored by bazarr as the int `0`/`1` (or null when unset). |
 | `tag` | string | no |  | Sonarr/Radarr tag this profile is scoped to. |
+
+### Notifier
+
+| Field | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `name` | string | yes |  | Provider name — must match one of bazarr's built-in providers exactly (e.g. `"Discord"`, `"Telegram"`, `"Pushover"`). |
+| `enabled` | boolean | no | `false` | Whether this provider is active. Omitted = disabled. |
+| `url` | string | no |  | Apprise notification URL (e.g. `discord://webhook_id/webhook_token`). Omitted = cleared (encoded as an explicit `null`, matching bazarr's store). |
 
 ### Subsync Checker
 
@@ -567,9 +585,9 @@ Enabled subtitle languages + the language-profile set, reconciled together
 | Field | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `id` | integer | yes |  | Item id (unique within the profile; referenced by the profile `cutoff`). |
-| `language` | string | no |  | Language code (alpha-2, e.g. `en`). |
-| `forced` | string | no |  | Match forced subtitles: `"True"` / `"False"` / `"Both"`. |
-| `hi` | string | no |  | Match hearing-impaired subtitles: `"True"` / `"False"` / `"Both"`. |
-| `audio_exclude` | string | no |  | Skip when this language is present in the audio: `"True"` / `"False"`. |
-| `audio_only_include` | string | no |  | Only include when this language is the audio: `"True"` / `"False"`. |
+| `language` | string | yes |  | Language code (alpha-2, e.g. `en`). |
+| `forced` | string | no | `False` | Match forced subtitles: `"True"` / `"False"` / `"Both"`. |
+| `hi` | string | no | `False` | Match hearing-impaired subtitles: `"True"` / `"False"` / `"Both"`. |
+| `audio_exclude` | string | no | `False` | Skip when this language is present in the audio: `"True"` / `"False"`. |
+| `audio_only_include` | string | no | `False` | Only include when this language is the audio: `"True"` / `"False"`. |
 

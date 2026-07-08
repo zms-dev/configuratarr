@@ -37,5 +37,9 @@ pub mod providers;
 pub mod language_profile;
 pub mod languages;
 
+// notification providers (nested list) + the notifications custom-sync resource
+pub mod notifications;
+pub mod notifier;
+
 // the settings config resource
 pub mod settings;

@@ -215,6 +215,38 @@ async fn extended_sections_apply_is_idempotent() {
     );
 }
 
+/// Notification providers round-trip idempotently — the `notifications-providers`
+/// side-channel field (one JSON string per provider, sparse-update-by-`name`)
+/// writes on the first apply and is a pure no-op on the second.
+#[tokio::test]
+#[ignore]
+async fn notifications_apply_is_idempotent() {
+    let Some((url, key)) = env() else { return };
+    let cfg = json!({
+        "notifications": {
+            "providers": [{
+                "name": "Discord",
+                "enabled": true,
+                "url": "discord://configuratarr_e2e/token",
+            }],
+        }
+    });
+
+    // First apply enables + sets the provider's URL.
+    run(&url, &key, cfg.clone(), ApplyOptions::default()).await;
+
+    // Second apply must be a pure no-op (diff sees the provider already stored).
+    let report = run(&url, &key, cfg, ApplyOptions::default()).await;
+    assert_eq!(
+        report,
+        Report {
+            unchanged: 1,
+            ..Report::default()
+        },
+        "re-applying an identical notification provider must be idempotent"
+    );
+}
+
 /// Subtitle-provider credentials round-trip idempotently — they're stored
 /// plaintext (unlike `auth.password`), so the generic section diff suffices.
 #[tokio::test]

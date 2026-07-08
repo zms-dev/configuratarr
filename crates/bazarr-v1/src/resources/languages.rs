@@ -8,20 +8,22 @@
 //!   listed).
 //!
 //! They're read back from separate endpoints (`/api/system/languages`,
-//! `/api/system/languages/profiles`) and the profile wire shape is irregular
-//! (mixed casing: `profileId`/`mustContain` camel but item keys snake;
-//! `originalFormat` an int; item booleans Python `"True"`/`"False"` strings). No
-//! stock codec models that, so this is a legitimate `sync = custom` reconcile —
-//! it owns its own translation, unlike [`Settings`], whose regular sections go
-//! through the engine codec.
+//! `/api/system/languages/profiles`). The profile wire shape is irregular (mixed
+//! casing: `profileId`/`mustContain` camel but item keys snake; `originalFormat`
+//! an int; nullable keys present) but the [`LanguageProfile`] descriptor models
+//! it directly — the parent is `case = camel`, items are a `case = snake` nested
+//! struct, and `#[wire(null, int)]` covers the int/null irregularities — so
+//! `engine::encode` produces the exact stored shape. This stays `sync = custom`
+//! only for the *write contract* (side-channel form fields, full-replace, and
+//! the two separate read endpoints), not for any hand-rolled translation.
 //!
 //! [`Settings`]: crate::resources::settings::Settings
 
 use std::collections::BTreeSet;
 
-use core_lib::{Change, CustomSync, CustomSyncFuture, HttpClient, RefStore};
+use core_lib::{Change, CustomSync, CustomSyncFuture, HttpClient, RefStore, engine};
 use core_macros::resource;
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use crate::resources::language_profile::LanguageProfile;
 
@@ -41,59 +43,25 @@ pub struct Languages {
     pub language_profiles: Vec<LanguageProfile>,
 }
 
-/// A profile item field as a string, defaulting to bazarr's own default when the
-/// user omitted it — so the built item carries the full key set bazarr stores.
-fn item_str(item: &Value, key: &str, default: &str) -> String {
-    item.get(key)
-        .and_then(Value::as_str)
-        .unwrap_or(default)
-        .to_string()
-}
-
-/// Translate one config profile item into bazarr's exact stored JSON shape.
-fn wire_item(item: &Value) -> Value {
-    json!({
-        "id": item.get("id").cloned().unwrap_or(Value::Null),
-        "language": item.get("language").cloned().unwrap_or(Value::Null),
-        "audio_exclude": item_str(item, "audio_exclude", "False"),
-        "audio_only_include": item_str(item, "audio_only_include", "False"),
-        "forced": item_str(item, "forced", "False"),
-        "hi": item_str(item, "hi", "False"),
-    })
-}
-
-/// Translate one config profile (snake_case) into bazarr's exact stored JSON
-/// shape (`profileId`, `mustContain`, …; `originalFormat` as the `0`/`1`/null int
-/// bazarr stores). Building the desired in the read shape makes the diff
-/// structural and the write idempotent.
-fn wire_profile(p: &Value) -> Value {
-    let original_format = match p.get("original_format") {
-        Some(Value::Bool(b)) => json!(i32::from(*b)),
-        _ => Value::Null,
-    };
-    let items: Vec<Value> = p
-        .get("items")
-        .and_then(Value::as_array)
-        .map(|a| a.iter().map(wire_item).collect())
-        .unwrap_or_default();
-    json!({
-        "profileId": p.get("profile_id").cloned().unwrap_or(Value::Null),
-        "name": p.get("name").cloned().unwrap_or(Value::Null),
-        "cutoff": p.get("cutoff").cloned().unwrap_or(Value::Null),
-        "items": items,
-        "mustContain": p.get("must_contain").cloned().unwrap_or_else(|| json!([])),
-        "mustNotContain": p.get("must_not_contain").cloned().unwrap_or_else(|| json!([])),
-        "originalFormat": original_format,
-        "tag": p.get("tag").cloned().unwrap_or(Value::Null),
-    })
+/// Translate one config profile into bazarr's exact stored JSON shape via the
+/// [`LanguageProfile`] descriptor — the `case = camel` mapping, the
+/// `#[wire(null, int)]` `originalFormat`, and the item defaults all come from the
+/// struct (see [`crate::resources::language_profile`]), so no hand-rolled JSON is
+/// needed. Building the desired in the read shape makes the diff structural and
+/// the write idempotent.
+fn wire_profile(p: &Value) -> anyhow::Result<Value> {
+    engine::encode(&engine::decode_config::<LanguageProfile>(p)?)
 }
 
 /// The declared profiles as bazarr wire JSON, sorted by `profileId` for an
 /// order-insensitive comparison with the live list.
-fn wire_profiles(declared: &[Value]) -> Vec<Value> {
-    let mut v: Vec<Value> = declared.iter().map(wire_profile).collect();
+fn wire_profiles(declared: &[Value]) -> anyhow::Result<Vec<Value>> {
+    let mut v: Vec<Value> = declared
+        .iter()
+        .map(wire_profile)
+        .collect::<anyhow::Result<_>>()?;
     v.sort_by_key(|p| p.get("profileId").and_then(Value::as_i64).unwrap_or(0));
-    v
+    Ok(v)
 }
 
 /// Sorted live list for the same order-insensitive comparison.
@@ -141,7 +109,7 @@ impl CustomSync for Languages {
                 None => true,
                 Some(profiles) => {
                     let live: Vec<Value> = client.get(PROFILES_PATH).await?;
-                    wire_profiles(profiles) == sorted_live_profiles(&live)
+                    wire_profiles(profiles)? == sorted_live_profiles(&live)
                 }
             };
 
@@ -156,7 +124,7 @@ impl CustomSync for Languages {
                 }
             }
             if let Some(profiles) = declared_profiles {
-                let json = Value::Array(wire_profiles(profiles)).to_string();
+                let json = Value::Array(wire_profiles(profiles)?).to_string();
                 pairs.push(("languages-profiles".to_string(), json));
             }
             if execute {
@@ -209,19 +177,22 @@ mod tests {
             "originalFormat": 0,
             "tag": null,
         });
-        assert_eq!(wire_profile(&cfg), expected);
+        assert_eq!(wire_profile(&cfg).unwrap(), expected);
     }
 
     #[test]
     fn original_format_maps_bool_to_int_else_null() {
         assert_eq!(
-            wire_profile(&json!({ "original_format": true }))["originalFormat"],
+            wire_profile(&json!({ "profile_id": 1, "original_format": true })).unwrap()["originalFormat"],
             json!(1)
         );
         assert_eq!(
-            wire_profile(&json!({ "original_format": false }))["originalFormat"],
+            wire_profile(&json!({ "profile_id": 1, "original_format": false })).unwrap()["originalFormat"],
             json!(0)
         );
-        assert_eq!(wire_profile(&json!({}))["originalFormat"], Value::Null);
+        assert_eq!(
+            wire_profile(&json!({ "profile_id": 1 })).unwrap()["originalFormat"],
+            Value::Null
+        );
     }
 }

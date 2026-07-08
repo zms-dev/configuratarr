@@ -2,8 +2,10 @@
 //!
 //! snake_case Rust field name → camelCase wire key by default; `wire_name`
 //! overrides it. Read-only fields (`#[id]`, `#[wire(read_only)]`) are skipped on
-//! encode. `Option::None` is omitted. Secrets are exposed to their plaintext
-//! string at this boundary. Nested resources recurse via the erased view.
+//! encode. `Option::None` is omitted (unless `#[wire(null)]`, which emits an
+//! explicit null); `#[wire(int)]` renders a bool as `0`/`1`. Secrets are exposed
+//! to their plaintext string at this boundary. Nested resources recurse via the
+//! erased view.
 
 use serde_json::{Map, Number, Value};
 
@@ -65,13 +67,31 @@ fn emit_field<T: 'static>(
             }
             map.insert(wire_key(f.name, f.wire_name, case), Value::Array(arr));
         }
-        other => {
-            if let Some(v) = field_to_json(&other)? {
-                map.insert(wire_key(f.name, f.wire_name, case), v);
+        other => match field_to_json(&other)? {
+            Some(v) => {
+                map.insert(
+                    wire_key(f.name, f.wire_name, case),
+                    coerce_wire(v, f.as_int),
+                );
             }
-        }
+            // `#[wire(null)]`: keep the key as an explicit null instead of
+            // dropping it (a `None` optional the API wants present).
+            None if f.emit_none => {
+                map.insert(wire_key(f.name, f.wire_name, case), Value::Null);
+            }
+            None => {}
+        },
     }
     Ok(())
+}
+
+/// Apply `#[wire(int)]`: a bool renders as the integer `0`/`1`. Anything else is
+/// unchanged.
+fn coerce_wire(v: Value, as_int: bool) -> Value {
+    match (as_int, &v) {
+        (true, Value::Bool(b)) => Value::Number(i64::from(*b).into()),
+        _ => v,
+    }
 }
 
 /// Convert one borrowed field value to JSON. `Ok(None)` means "omit this key"
@@ -239,6 +259,15 @@ pub fn decode<T: Described>(value: &Value) -> anyhow::Result<T> {
         if jv.is_null() {
             continue;
         }
+        // `#[wire(int)]`: the wire carries `0`/`1` for a bool field — map it back
+        // before the kind-driven conversion (which expects a JSON bool).
+        let int_bool;
+        let jv = if f.as_int && jv.is_number() {
+            int_bool = Value::Bool(jv.as_i64().is_some_and(|n| n != 0));
+            &int_bool
+        } else {
+            jv
+        };
         let fv = json_to_field_value(f.kind, f.secret, jv)
             .map_err(|e| anyhow::anyhow!("field `{}`: {e}", f.name))?;
         (f.set)(&mut out, fv).map_err(|e| anyhow::anyhow!("field `{}`: {e}", f.name))?;

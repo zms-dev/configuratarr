@@ -370,6 +370,16 @@ fn emit_struct_fields(
         } else {
             quote!(false)
         };
+        let emit_none_tok = if attrs.emit_none {
+            quote!(true)
+        } else {
+            quote!(false)
+        };
+        let as_int_tok = if attrs.as_int {
+            quote!(true)
+        } else {
+            quote!(false)
+        };
 
         let default_tok: TokenStream = match &attrs.default {
             Some(lit) => {
@@ -457,6 +467,8 @@ fn emit_struct_fields(
                 kind: #kind_tok,
                 wire_name: #wire_name_tok,
                 read_only: #read_only_tok,
+                emit_none: #emit_none_tok,
+                as_int: #as_int_tok,
                 default: #default_tok,
                 secret: #secret_tok,
                 flatten: #flatten_tok,

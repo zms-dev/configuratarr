@@ -14,6 +14,7 @@ use core_lib::SecretValue;
 use core_macros::service;
 
 use crate::resources::languages::Languages;
+use crate::resources::notifications::Notifications;
 use crate::resources::settings::Settings;
 
 /// Bazarr v1 — desired-state config for one instance.
@@ -30,7 +31,8 @@ pub struct BazarrV1 {
     pub insecure: Option<bool>,
     pub timeout_secs: Option<u64>,
 
-    // --- config (settings blob) + the language side-channels ---
+    // --- config (settings blob) + the language / notification side-channels ---
     pub settings: Option<Settings>,
     pub languages: Option<Languages>,
+    pub notifications: Option<Notifications>,
 }
