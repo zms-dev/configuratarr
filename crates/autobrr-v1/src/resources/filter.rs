@@ -14,6 +14,8 @@
 //! declared key/value already matches live (extra server keys are ignored),
 //! rather than a merge-equality that server ids would always trip.
 
+use std::collections::HashSet;
+
 use core_lib::engine;
 use core_lib::{Change, ChangeKind, CustomSync, CustomSyncFuture, HttpClient, RefStore};
 use core_macros::resource;
@@ -252,6 +254,90 @@ pub(crate) fn is_subset(want: &Value, have: &Value) -> bool {
     }
 }
 
+/// Actions are keyed by `name` for identity. autobrr's action store is
+/// *upsert-by-id with no delete* (unlike the filter's indexers/external, which
+/// it replaces wholesale), so a managed filter's actions must carry a stable,
+/// unique key — otherwise every apply re-inserts them. Reject blank/duplicate
+/// action names up front. See [[keyless-collection-constraint]].
+fn validate_action_names(filter: &str, wire: &Value) -> anyhow::Result<()> {
+    let mut seen = HashSet::new();
+    if let Some(actions) = wire.get("actions").and_then(Value::as_array) {
+        for a in actions {
+            let n = a.get("name").and_then(Value::as_str).unwrap_or("");
+            if n.is_empty() {
+                anyhow::bail!(
+                    "filter '{filter}': every action needs a non-empty `name` \
+                     (it is the action's identity for sync)"
+                );
+            }
+            if !seen.insert(n) {
+                anyhow::bail!(
+                    "filter '{filter}': duplicate action name '{n}' \
+                     (action names must be unique within a filter)"
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Reconcile the filter's `actions` against what autobrr has stored. Matches
+/// each desired action to a live one by `name`, claiming one live id per
+/// desired action, and **injects that id into `wire`** so autobrr updates in
+/// place instead of inserting a duplicate. Returns `(actions_in_sync, prune)`:
+/// `prune` is the ids of every live action left unclaimed — undeclared actions
+/// *and* any accumulated same-name duplicates — which the caller deletes via
+/// `DELETE /api/actions/{id}`.
+fn plan_actions(wire: &mut Value, full: &Value) -> (bool, Vec<i64>) {
+    let live: Vec<Value> = full
+        .get("actions")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+
+    let mut claimed: HashSet<i64> = HashSet::new();
+    let mut synced = true;
+
+    if let Some(desired) = wire.get_mut("actions").and_then(Value::as_array_mut) {
+        for d in desired.iter_mut() {
+            let name = d.get("name").and_then(Value::as_str).unwrap_or_default();
+            // First live action of this name whose id isn't already claimed.
+            let matched = live.iter().find(|l| {
+                l.get("name").and_then(Value::as_str) == Some(name)
+                    && l.get("id")
+                        .and_then(Value::as_i64)
+                        .is_some_and(|id| !claimed.contains(&id))
+            });
+            match matched {
+                Some(l) => {
+                    let id = l.get("id").and_then(Value::as_i64).unwrap_or_default();
+                    claimed.insert(id);
+                    // Compare before injecting the id (the live side carries it).
+                    if !is_subset(d, l) {
+                        synced = false;
+                    }
+                    if let Some(obj) = d.as_object_mut() {
+                        obj.insert("id".to_string(), json!(id));
+                    }
+                }
+                // No live match → a new action; autobrr will insert it.
+                None => synced = false,
+            }
+        }
+    }
+
+    let prune: Vec<i64> = live
+        .iter()
+        .filter_map(|l| l.get("id").and_then(Value::as_i64))
+        .filter(|id| !claimed.contains(id))
+        .collect();
+    if !prune.is_empty() {
+        synced = false;
+    }
+
+    (synced, prune)
+}
+
 impl CustomSync for Filter {
     fn reconcile<'a>(
         client: &'a HttpClient,
@@ -269,7 +355,8 @@ impl CustomSync for Filter {
                     .and_then(Value::as_str)
                     .ok_or_else(|| anyhow::anyhow!("filter entry is missing `name`"))?;
                 // Full desired wire (id is read-only, so absent here).
-                let wire = engine::encode(&engine::decode_config::<Self>(cfg)?)?;
+                let mut wire = engine::encode(&engine::decode_config::<Self>(cfg)?)?;
+                validate_action_names(name, &wire)?;
 
                 // The list endpoint returns a *trimmed* filter (no match/except
                 // fields), so match by name here but fetch the full object by id
@@ -282,14 +369,32 @@ impl CustomSync for Filter {
                 let kind = match existing_id {
                     Some(id) => {
                         let full: Value = client.get(&format!("/api/filters/{id}")).await?;
-                        if is_subset(&wire, &full) {
+
+                        // Reconcile actions by identity: inject matched live ids
+                        // (so autobrr updates in place, never duplicates) and
+                        // collect undeclared/duplicate actions to prune.
+                        let (actions_synced, prune) = plan_actions(&mut wire, &full);
+
+                        // Diff the rest of the filter separately — `is_subset`
+                        // compares arrays positionally, which is wrong for
+                        // actions (matched by name above).
+                        let mut scalars = wire.clone();
+                        if let Some(obj) = scalars.as_object_mut() {
+                            obj.remove("actions");
+                        }
+
+                        if is_subset(&scalars, &full) && actions_synced {
                             // Already in sync — nothing to do.
                             ChangeKind::Unchanged
                         } else {
-                            // Drifted — PATCH the full config by id.
+                            // Drifted — PATCH the full config (actions now carry
+                            // ids), then prune the orphaned/duplicate actions.
                             if execute {
                                 let _: Value =
                                     client.patch(&format!("/api/filters/{id}"), &wire).await?;
+                                for action_id in &prune {
+                                    client.delete(&format!("/api/actions/{action_id}")).await?;
+                                }
                             }
                             ChangeKind::Updated
                         }
@@ -316,5 +421,93 @@ impl CustomSync for Filter {
 
             Ok(changes)
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn action(name: &str) -> Value {
+        json!({ "name": name, "type": "WEBHOOK", "enabled": true })
+    }
+    fn live_action(id: i64, name: &str) -> Value {
+        json!({ "id": id, "name": name, "type": "WEBHOOK", "enabled": true })
+    }
+
+    #[test]
+    fn validate_rejects_blank_and_duplicate_names() {
+        assert!(validate_action_names("f", &json!({ "actions": [action("a")] })).is_ok());
+        assert!(
+            validate_action_names("f", &json!({ "actions": [{ "type": "WEBHOOK" }] })).is_err(),
+            "blank/absent name must error"
+        );
+        assert!(
+            validate_action_names("f", &json!({ "actions": [action("a"), action("a")] })).is_err(),
+            "duplicate name must error"
+        );
+    }
+
+    #[test]
+    fn plan_injects_matched_id_and_reports_in_sync() {
+        let mut wire = json!({ "actions": [action("keep")] });
+        let full = json!({ "actions": [live_action(7, "keep")] });
+        let (synced, prune) = plan_actions(&mut wire, &full);
+        assert!(synced, "single matched action, no orphans");
+        assert!(prune.is_empty());
+        assert_eq!(
+            wire["actions"][0]["id"],
+            json!(7),
+            "live id injected for update-in-place"
+        );
+    }
+
+    #[test]
+    fn plan_prunes_undeclared_action() {
+        let mut wire = json!({ "actions": [action("keep")] });
+        let full = json!({ "actions": [live_action(7, "keep"), live_action(9, "orphan")] });
+        let (synced, prune) = plan_actions(&mut wire, &full);
+        assert!(!synced, "an undeclared live action means out of sync");
+        assert_eq!(prune, vec![9], "the orphan is pruned, the match kept");
+        assert_eq!(wire["actions"][0]["id"], json!(7));
+    }
+
+    #[test]
+    fn plan_dedups_same_name_duplicates() {
+        // The real-world failure: N copies of the same action accumulated.
+        let mut wire = json!({ "actions": [action("sonarr")] });
+        let full = json!({ "actions": [
+            live_action(1, "sonarr"),
+            live_action(3, "sonarr"),
+            live_action(5, "sonarr"),
+        ] });
+        let (synced, mut prune) = plan_actions(&mut wire, &full);
+        prune.sort_unstable();
+        assert!(!synced);
+        assert_eq!(prune, vec![3, 5], "keep one, prune the duplicate copies");
+        assert_eq!(wire["actions"][0]["id"], json!(1), "claims the first copy");
+    }
+
+    #[test]
+    fn plan_new_action_is_not_synced_and_inserts() {
+        let mut wire = json!({ "actions": [action("fresh")] });
+        let full = json!({ "actions": [] });
+        let (synced, prune) = plan_actions(&mut wire, &full);
+        assert!(!synced, "a brand-new action needs an insert");
+        assert!(prune.is_empty());
+        assert!(
+            wire["actions"][0].get("id").is_none(),
+            "no id → autobrr inserts"
+        );
+    }
+
+    #[test]
+    fn plan_empty_desired_prunes_all_live() {
+        let mut wire = json!({ "actions": [] });
+        let full = json!({ "actions": [live_action(1, "a"), live_action(2, "b")] });
+        let (synced, mut prune) = plan_actions(&mut wire, &full);
+        prune.sort_unstable();
+        assert!(!synced);
+        assert_eq!(prune, vec![1, 2], "declaring no actions prunes them all");
     }
 }

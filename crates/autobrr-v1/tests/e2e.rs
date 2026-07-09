@@ -37,6 +37,33 @@ async fn run(url: &str, key: &str, resources: Value, opts: ApplyOptions) -> Repo
     apply(&svc, &value, opts).await.expect("apply succeeds")
 }
 
+/// Live `(action name, id)` pairs for a filter, sorted by name — for asserting
+/// action-set membership and id stability across applies.
+async fn filter_action_ids(client: &core_lib::HttpClient, filter: &str) -> Vec<(String, i64)> {
+    let filters: Vec<Value> = client.get("/api/filters").await.expect("list filters");
+    let fid = filters
+        .iter()
+        .find(|f| f.get("name").and_then(Value::as_str) == Some(filter))
+        .and_then(|f| f.get("id").and_then(Value::as_i64))
+        .expect("filter present");
+    let full: Value = client
+        .get(&format!("/api/filters/{fid}"))
+        .await
+        .expect("get filter");
+    let mut out: Vec<(String, i64)> = full["actions"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| {
+                    Some((x.get("name")?.as_str()?.to_string(), x.get("id")?.as_i64()?))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    out.sort();
+    out
+}
+
 /// `wait_healthy` against the live API: `/api/config` answers OK (and confirms
 /// the token).
 #[tokio::test]
@@ -128,11 +155,15 @@ async fn filter_two_step_create_idempotent() {
         "codecs": ["x265"],
         "match_release_types": ["MOVIE"],
     }] });
-    let first = run(&url, &key, cfg.clone(), ApplyOptions::default()).await;
-    assert_eq!(first.created, 1, "filter should be created");
+    // First apply may create or reconcile pre-existing state (the e2e instance
+    // is reused across runs); the invariant is that a *repeated* apply is a no-op.
+    run(&url, &key, cfg.clone(), ApplyOptions::default()).await;
     let second = run(&url, &key, cfg, ApplyOptions::default()).await;
     assert_eq!(second.created, 0);
-    assert_eq!(second.updated, 0, "second filter apply should be a no-op");
+    assert_eq!(
+        second.updated, 0,
+        "second filter apply should be a no-op: {second:?}"
+    );
     assert_eq!(second.unchanged, 1);
 }
 
@@ -763,4 +794,110 @@ async fn download_client_usenet_types() {
         second.created, 0,
         "second usenet apply creates nothing: {second:?}"
     );
+}
+
+/// Filter actions are reconciled **by identity**: an update (here a priority
+/// change) must update the existing actions in place, keeping their ids and
+/// count stable — not re-insert them. Regression guard for the duplication bug
+/// (autobrr's action store is upsert-by-id with no delete, so sending id-less
+/// actions on every apply used to append a fresh copy each time).
+#[tokio::test]
+#[ignore]
+async fn filter_actions_stable_on_update() {
+    use core_lib::Service;
+
+    let Some((url, key)) = env() else { return };
+    let mk = |priority: i64| {
+        json!({ "filters": [{
+            "name": "cfg-e2e-actionids",
+            "enabled": true,
+            "priority": priority,
+            "resolutions": ["1080p"],
+            "actions": [
+                { "name": "a", "action_type": "WEBHOOK", "enabled": true,
+                  "webhook_host": "http://localhost:9001/a", "webhook_method": "POST" },
+                { "name": "b", "action_type": "WEBHOOK", "enabled": true,
+                  "webhook_host": "http://localhost:9002/b", "webhook_method": "POST" },
+            ],
+        }] })
+    };
+
+    run(&url, &key, mk(5), ApplyOptions::default()).await;
+
+    let (svc, _) = instance::<AutobrrV1>(&url, &key, json!({}));
+    let client = core_lib::apply::connect(&svc.connection())
+        .await
+        .expect("connect");
+
+    let before = filter_action_ids(&client, "cfg-e2e-actionids").await;
+    assert_eq!(before.len(), 2, "two actions after create: {before:?}");
+
+    // Force an update; actions must be updated in place, not duplicated.
+    let updated = run(&url, &key, mk(10), ApplyOptions::default()).await;
+    assert_eq!(
+        updated.updated, 1,
+        "priority change drives an update: {updated:?}"
+    );
+
+    let after = filter_action_ids(&client, "cfg-e2e-actionids").await;
+    assert_eq!(
+        after, before,
+        "action set + ids stable across update (no duplication): {after:?} vs {before:?}"
+    );
+
+    let settled = run(&url, &key, mk(10), ApplyOptions::default()).await;
+    assert_eq!(settled.updated, 0, "re-apply is a no-op: {settled:?}");
+}
+
+/// Removing an action from the desired config **prunes** it live. Regression
+/// guard for the non-pruning bug (undeclared actions used to linger forever and,
+/// via the length-mismatch diff, drive perpetual re-inserts).
+#[tokio::test]
+#[ignore]
+async fn filter_prunes_undeclared_action() {
+    use core_lib::Service;
+
+    let Some((url, key)) = env() else { return };
+    let base = |actions: Value| {
+        json!({ "filters": [{
+            "name": "cfg-e2e-prune",
+            "enabled": true,
+            "resolutions": ["1080p"],
+            "actions": actions,
+        }] })
+    };
+    let two = base(json!([
+        { "name": "keep", "action_type": "WEBHOOK", "enabled": true,
+          "webhook_host": "http://localhost:9001/keep", "webhook_method": "POST" },
+        { "name": "drop", "action_type": "WEBHOOK", "enabled": true,
+          "webhook_host": "http://localhost:9002/drop", "webhook_method": "POST" },
+    ]));
+    let one = base(json!([
+        { "name": "keep", "action_type": "WEBHOOK", "enabled": true,
+          "webhook_host": "http://localhost:9001/keep", "webhook_method": "POST" },
+    ]));
+
+    run(&url, &key, two, ApplyOptions::default()).await;
+
+    let (svc, _) = instance::<AutobrrV1>(&url, &key, json!({}));
+    let client = core_lib::apply::connect(&svc.connection())
+        .await
+        .expect("connect");
+    assert_eq!(
+        filter_action_ids(&client, "cfg-e2e-prune").await.len(),
+        2,
+        "two actions after the two-action apply"
+    );
+
+    // Drop "drop" from config → it must be pruned, "keep" untouched.
+    run(&url, &key, one.clone(), ApplyOptions::default()).await;
+    let after = filter_action_ids(&client, "cfg-e2e-prune").await;
+    assert_eq!(
+        after.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(),
+        vec!["keep"],
+        "undeclared action pruned, exactly one left: {after:?}"
+    );
+
+    let settled = run(&url, &key, one, ApplyOptions::default()).await;
+    assert_eq!(settled.updated, 0, "re-apply is a no-op: {settled:?}");
 }
