@@ -55,20 +55,23 @@
           "type": {
             "type": "string",
             "enum": [
+              "TEST",
+              "EXEC",
               "QBITTORRENT",
               "DELUGE_V1",
               "DELUGE_V2",
               "RTORRENT",
               "TRANSMISSION",
-              "SONARR",
-              "RADARR",
-              "LIDARR",
-              "WHISPARR",
-              "READARR",
               "PORLA",
               "WATCH_FOLDER",
               "WEBHOOK",
-              "TEST"
+              "RADARR",
+              "SONARR",
+              "LIDARR",
+              "WHISPARR",
+              "READARR",
+              "SABNZBD",
+              "NZBGET"
             ]
           },
           "enabled": {
@@ -80,8 +83,50 @@
           "tags": {
             "type": "string"
           },
+          "label": {
+            "type": "string"
+          },
           "save_path": {
             "type": "string"
+          },
+          "download_path": {
+            "type": "string"
+          },
+          "paused": {
+            "type": "boolean"
+          },
+          "ignore_rules": {
+            "type": "boolean"
+          },
+          "first_last_piece_prio": {
+            "type": "boolean"
+          },
+          "skip_hash_check": {
+            "type": "boolean"
+          },
+          "content_layout": {
+            "type": "string"
+          },
+          "limit_upload_speed": {
+            "type": "integer"
+          },
+          "limit_download_speed": {
+            "type": "integer"
+          },
+          "limit_ratio": {
+            "type": "number"
+          },
+          "limit_seed_time": {
+            "type": "integer"
+          },
+          "priority": {
+            "type": "string"
+          },
+          "reannounce_skip": {
+            "type": "boolean"
+          },
+          "reannounce_delete": {
+            "type": "boolean"
           },
           "reannounce_interval": {
             "type": "integer"
@@ -91,6 +136,12 @@
           },
           "client_id": {
             "type": "integer"
+          },
+          "external_download_client_id": {
+            "type": "integer"
+          },
+          "external_download_client": {
+            "type": "string"
           },
           "webhook_host": {
             "type": "string"
@@ -152,7 +203,19 @@
           "webhook_data": {
             "type": "string"
           },
+          "webhook_headers": {
+            "type": "string"
+          },
           "webhook_expect_status": {
+            "type": "integer"
+          },
+          "webhook_retry_status": {
+            "type": "string"
+          },
+          "webhook_retry_attempts": {
+            "type": "integer"
+          },
+          "webhook_retry_delay_seconds": {
             "type": "integer"
           },
           "exec_cmd": {
@@ -163,6 +226,13 @@
           },
           "exec_expect_status": {
             "type": "integer"
+          },
+          "on_error": {
+            "type": "string",
+            "enum": [
+              "CONTINUE",
+              "REJECT"
+            ]
           }
         }
       },
@@ -648,6 +718,28 @@
           }
         }
       },
+      "DownloadClientAuth": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "NONE",
+              "BASIC_AUTH",
+              "DIGEST_AUTH"
+            ]
+          },
+          "username": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          }
+        }
+      },
       "DownloadClientSettings": {
         "type": "object",
         "properties": {
@@ -657,11 +749,17 @@
           "basic": {
             "$ref": "#/components/schemas/DownloadClientBasic"
           },
+          "auth": {
+            "$ref": "#/components/schemas/DownloadClientAuth"
+          },
           "rules": {
             "$ref": "#/components/schemas/DownloadClientRules"
           },
           "external_download_client_id": {
             "type": "integer"
+          },
+          "external_download_client": {
+            "type": "string"
           }
         }
       },
@@ -688,13 +786,14 @@
               "DELUGE_V2",
               "RTORRENT",
               "TRANSMISSION",
-              "SONARR",
+              "PORLA",
               "RADARR",
+              "SONARR",
               "LIDARR",
               "WHISPARR",
               "READARR",
-              "PORLA",
-              "WATCH_FOLDER"
+              "SABNZBD",
+              "NZBGET"
             ]
           },
           "enabled": {
@@ -731,7 +830,9 @@
           "PUSH_ERROR",
           "IRC_DISCONNECTED",
           "IRC_RECONNECTED",
-          "APP_UPDATE_AVAILABLE"
+          "APP_UPDATE_AVAILABLE",
+          "RELEASE_NEW",
+          "TEST"
         ]
       },
       "Notification": {
@@ -752,14 +853,22 @@
           "type": {
             "type": "string",
             "enum": [
-              "NOTIFIARR",
               "DISCORD",
+              "NOTIFIARR",
+              "IFTTT",
+              "JOIN",
+              "MATTERMOST",
+              "MATRIX",
+              "PUSH_BULLET",
+              "PUSHOVER",
+              "ROCKETCHAT",
+              "SLACK",
               "TELEGRAM",
               "GOTIFY",
-              "PUSHOVER",
-              "SLACK",
               "NTFY",
-              "SHOUTRRR"
+              "LUNASEA",
+              "SHOUTRRR",
+              "WEBHOOK"
             ]
           },
           "enabled": {
@@ -787,6 +896,39 @@
             "type": "string"
           },
           "host": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "icon": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          },
+          "rooms": {
+            "type": "string"
+          },
+          "targets": {
+            "type": "string"
+          },
+          "devices": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "integer"
+          },
+          "sound": {
+            "type": "string"
+          },
+          "method": {
+            "type": "string"
+          },
+          "headers": {
             "type": "string"
           }
         }

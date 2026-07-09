@@ -29,7 +29,7 @@ Autobrr v1 — desired-state config for one instance.
 | Field | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `name` | string | yes |  | Display name — its identity. |
-| `notification_type` | string | yes |  | Provider kind: `DISCORD`, `TELEGRAM`, `GOTIFY`, `NTFY`, … |
+| `notification_type` | string | yes |  | Provider kind. One of: `DISCORD`, `NOTIFIARR`, `IFTTT`, `JOIN`, `MATTERMOST`, `MATRIX`, `PUSH_BULLET`, `PUSHOVER`, `ROCKETCHAT`, `SLACK`, `TELEGRAM`, `GOTIFY`, `NTFY`, `LUNASEA`, `SHOUTRRR`, `WEBHOOK`. |
 | `enabled` | boolean | yes |  | Whether the target is active. |
 | `events` | array of [`notification_event`](#notification-event) | no |  | Events that trigger this notification. |
 | `webhook` | string | no |  | Webhook URL (Discord and similar). |
@@ -276,16 +276,18 @@ Autobrr v1 — desired-state config for one instance.
 
 ### Notification Event
 
-Allowed values: `PUSH_APPROVED` / `PUSH_REJECTED` / `PUSH_ERROR` / `IRC_DISCONNECTED` / `IRC_RECONNECTED` / `APP_UPDATE_AVAILABLE`.
+Allowed values: `PUSH_APPROVED` / `PUSH_REJECTED` / `PUSH_ERROR` / `IRC_DISCONNECTED` / `IRC_RECONNECTED` / `APP_UPDATE_AVAILABLE` / `RELEASE_NEW` / `TEST`.
 
 ### Download Client Settings
 
 | Field | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `apikey` | secret string | no |  | API key (arr-style clients that authenticate by key rather than user/pass). Credential — redacted in plan output. |
-| `basic` | [`download_client_basic`](#download-client-basic) | no |  | HTTP basic-auth credentials, if the client's endpoint is protected. |
+| `basic` | [`download_client_basic`](#download-client-basic) | no |  | HTTP basic-auth credentials (deprecated — prefer `auth`). |
+| `auth` | [`download_client_auth`](#download-client-auth) | no |  | Auth for the client's web endpoint (supersedes `basic`). |
 | `rules` | [`download_client_rules`](#download-client-rules) | no |  | Throughput/queue rules applied before pushing releases. |
 | `external_download_client_id` | integer | no |  | Id of another download client to delegate to (proxy setups). |
+| `external_download_client` | string | no |  | Name of another download client to delegate to (proxy setups). |
 
 ### Irc Auth
 
@@ -361,10 +363,15 @@ Allowed values: `PUSH_APPROVED` / `PUSH_REJECTED` / `PUSH_ERROR` / `IRC_DISCONNE
 | `webhook_host` | string | no |  | Webhook URL (`WEBHOOK` type). |
 | `webhook_method` | string | no |  | HTTP method for the webhook. |
 | `webhook_data` | string | no |  | Request body sent to the webhook. |
+| `webhook_headers` | string | no |  | Extra webhook headers (`Key=value,Key2=value2`). |
 | `webhook_expect_status` | integer | no |  | HTTP status the webhook must return to pass. |
+| `webhook_retry_status` | string | no |  | HTTP status(es) that trigger a retry. |
+| `webhook_retry_attempts` | integer | no |  | Number of times to retry the webhook. |
+| `webhook_retry_delay_seconds` | integer | no |  | Delay between webhook retries, seconds. |
 | `exec_cmd` | string | no |  | Command to run (`EXEC` type). |
 | `exec_args` | string | no |  | Arguments passed to the command. |
 | `exec_expect_status` | integer | no |  | Exit status the command must return to pass. |
+| `on_error` | string | no |  | Behaviour when the check errors: `CONTINUE` or `REJECT`. |
 
 ### List Filter
 
@@ -381,6 +388,15 @@ Allowed values: `PUSH_APPROVED` / `PUSH_REJECTED` / `PUSH_ERROR` / `IRC_DISCONNE
 | `username` | string | no |  | Basic-auth username. |
 | `password` | secret string | no |  | Basic-auth password. Credential — redacted in plan output. |
 
+### Download Client Auth
+
+| Field | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `enabled` | boolean | no |  | Whether auth is required. |
+| `auth_type` | string | no |  | Auth scheme: `NONE`, `BASIC_AUTH`, or `DIGEST_AUTH`. |
+| `username` | string | no |  | Auth username. |
+| `password` | secret string | no |  | Auth password. Credential — redacted in plan output. |
+
 ### Download Client Rules
 
 | Field | Type | Required | Default | Description |
@@ -388,7 +404,7 @@ Allowed values: `PUSH_APPROVED` / `PUSH_REJECTED` / `PUSH_ERROR` / `IRC_DISCONNE
 | `enabled` | boolean | no |  | Whether the rules are enforced. |
 | `max_active_downloads` | integer | no |  | Cap on simultaneously active downloads (0 = unlimited). |
 | `ignore_slow_torrents` | boolean | no |  | Skip pushing when existing torrents are slow. |
-| `ignore_slow_torrents_condition` | string | no |  | When the slow-torrent check applies (`MAX_DOWNLOAD_SPEED` / `MAX_UPLOAD_SPEED`). |
+| `ignore_slow_torrents_condition` | string | no |  | When the slow-torrent check applies (`ALWAYS` / `MAX_DOWNLOADS_REACHED`). |
 | `download_speed_threshold` | integer | no |  | Download-speed threshold (KB/s) for the slow check. |
 | `upload_speed_threshold` | integer | no |  | Upload-speed threshold (KB/s) for the slow check. |
 

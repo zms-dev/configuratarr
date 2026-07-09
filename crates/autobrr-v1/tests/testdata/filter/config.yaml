@@ -53,4 +53,10 @@ external:
     enabled: true
     webhook_host: http://localhost:9000/check
     webhook_method: POST
+    webhook_data: '{"name":"{{ .TorrentName }}"}'
+    webhook_headers: "X-Api-Key=abc,Accept=application/json"
     webhook_expect_status: 200
+    webhook_retry_status: "500,502,503"
+    webhook_retry_attempts: 3
+    webhook_retry_delay_seconds: 5
+    on_error: REJECT

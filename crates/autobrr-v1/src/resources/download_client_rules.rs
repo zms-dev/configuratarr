@@ -9,7 +9,7 @@ pub struct DownloadClientRules {
     pub max_active_downloads: Option<i32>,
     /// Skip pushing when existing torrents are slow.
     pub ignore_slow_torrents: Option<bool>,
-    /// When the slow-torrent check applies (`MAX_DOWNLOAD_SPEED` / `MAX_UPLOAD_SPEED`).
+    /// When the slow-torrent check applies (`ALWAYS` / `MAX_DOWNLOADS_REACHED`).
     pub ignore_slow_torrents_condition: Option<String>,
     /// Download-speed threshold (KB/s) for the slow check.
     pub download_speed_threshold: Option<i32>,

@@ -38,6 +38,18 @@ conformance!(
     "Notification",
     "testdata/notification/config.yaml"
 );
+conformance!(
+    notification_webhook,
+    resources::notification::Notification,
+    "Notification",
+    "testdata/notification_webhook/config.yaml"
+);
+conformance!(
+    notification_matrix,
+    resources::notification::Notification,
+    "Notification",
+    "testdata/notification_matrix/config.yaml"
+);
 
 // crud collections
 conformance!(

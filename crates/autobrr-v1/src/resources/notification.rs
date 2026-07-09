@@ -21,7 +21,9 @@ pub struct Notification {
     /// Display name — its identity.
     #[key]
     pub name: String,
-    /// Provider kind: `DISCORD`, `TELEGRAM`, `GOTIFY`, `NTFY`, …
+    /// Provider kind. One of: `DISCORD`, `NOTIFIARR`, `IFTTT`, `JOIN`,
+    /// `MATTERMOST`, `MATRIX`, `PUSH_BULLET`, `PUSHOVER`, `ROCKETCHAT`, `SLACK`,
+    /// `TELEGRAM`, `GOTIFY`, `NTFY`, `LUNASEA`, `SHOUTRRR`, `WEBHOOK`.
     #[wire(name = "type")]
     pub notification_type: String,
     /// Whether the target is active.

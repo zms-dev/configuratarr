@@ -558,3 +558,209 @@ async fn irc_network_create_update_idempotent() {
         "update settles to unchanged: {settled:?}"
     );
 }
+
+/// Create-only notification of the newly-added `WEBHOOK` type, subscribed to the
+/// newly-added `RELEASE_NEW` event. Live must accept both (an unknown `type` or
+/// `events[]` value errors in apply — the enum additions can't be proven by
+/// conformance alone). Created once, then unchanged.
+#[tokio::test]
+#[ignore]
+async fn notification_webhook_release_new_idempotent() {
+    let Some((url, key)) = env() else { return };
+    let cfg = json!({ "notifications": [{
+        "name": "cfg-e2e-webhook",
+        "notification_type": "WEBHOOK",
+        "enabled": true,
+        "events": ["PUSH_APPROVED", "PUSH_REJECTED", "RELEASE_NEW"],
+        "webhook": "http://localhost:9999/hook",
+    }] });
+    run(&url, &key, cfg.clone(), ApplyOptions::default()).await;
+    let second = run(&url, &key, cfg, ApplyOptions::default()).await;
+    assert_eq!(second.created, 0);
+    assert_eq!(
+        second.unchanged, 1,
+        "second webhook-notification apply is a no-op: {second:?}"
+    );
+}
+
+/// A download client carrying the modern `auth` block (`type` = `BASIC_AUTH`)
+/// and `rules` with the corrected `ignore_slow_torrents_condition`
+/// (`MAX_DOWNLOADS_REACHED`, not the old bogus `MAX_DOWNLOAD_SPEED`). Proves the
+/// live API accepts both, stores the condition verbatim, and that a repeated
+/// apply creates nothing.
+#[tokio::test]
+#[ignore]
+async fn download_client_auth_block_and_rules() {
+    use core_lib::Service;
+
+    let Some((url, key)) = env() else { return };
+    let cfg = json!({ "download_clients": [{
+        "name": "cfg-e2e-auth",
+        "client_type": "QBITTORRENT",
+        "enabled": true,
+        "host": "http://localhost",
+        "port": 8080,
+        "settings": {
+            "auth": { "enabled": true, "auth_type": "BASIC_AUTH", "username": "u", "password": "p" },
+            "rules": {
+                "enabled": true,
+                "ignore_slow_torrents": true,
+                "ignore_slow_torrents_condition": "MAX_DOWNLOADS_REACHED",
+                "download_speed_threshold": 5000,
+            },
+        },
+    }] });
+
+    // Live must accept the auth block + corrected condition (an unknown/mistyped
+    // field 500s in apply).
+    run(&url, &key, cfg.clone(), ApplyOptions::default()).await;
+
+    // The corrected condition value round-tripped and persisted.
+    let (svc, _) = instance::<AutobrrV1>(&url, &key, json!({}));
+    let client = core_lib::apply::connect(&svc.connection())
+        .await
+        .expect("connect");
+    let clients: Vec<Value> = client
+        .get("/api/download_clients")
+        .await
+        .expect("list clients");
+    let dc = clients
+        .iter()
+        .find(|c| c.get("name").and_then(Value::as_str) == Some("cfg-e2e-auth"))
+        .expect("client present");
+    assert_eq!(
+        dc["settings"]["rules"]["ignore_slow_torrents_condition"].as_str(),
+        Some("MAX_DOWNLOADS_REACHED"),
+        "rules condition stored verbatim: {dc:?}"
+    );
+
+    let second = run(&url, &key, cfg, ApplyOptions::default()).await;
+    assert_eq!(
+        second.created, 0,
+        "second auth-client apply creates nothing: {second:?}"
+    );
+}
+
+/// A filter with an external `WEBHOOK` check carrying every newly-modelled field
+/// (`webhook_headers`, `webhook_retry_*`, `on_error`). Live must accept them all
+/// (conformance can't catch a field autobrr rejects at runtime — the `base_url`
+/// lesson), store `on_error`/`webhook_headers` verbatim, and settle idempotently.
+#[tokio::test]
+#[ignore]
+async fn filter_external_check_new_fields() {
+    use core_lib::Service;
+
+    let Some((url, key)) = env() else { return };
+    let cfg = json!({ "filters": [{
+        "name": "cfg-e2e-extcheck",
+        "enabled": true,
+        "resolutions": ["1080p"],
+        "external": [{
+            "name": "size-check",
+            "external_type": "WEBHOOK",
+            "enabled": true,
+            "index": 0,
+            "webhook_host": "http://localhost:9000/check",
+            "webhook_method": "POST",
+            "webhook_data": "{\"n\":\"x\"}",
+            "webhook_headers": "X-Api-Key=abc,Accept=application/json",
+            "webhook_expect_status": 200,
+            "webhook_retry_status": "500,502,503",
+            "webhook_retry_attempts": 3,
+            "webhook_retry_delay_seconds": 5,
+            "on_error": "REJECT",
+        }],
+    }] });
+
+    run(&url, &key, cfg.clone(), ApplyOptions::default()).await;
+
+    let (svc, _) = instance::<AutobrrV1>(&url, &key, json!({}));
+    let client = core_lib::apply::connect(&svc.connection())
+        .await
+        .expect("connect");
+    let filters: Vec<Value> = client.get("/api/filters").await.expect("list filters");
+    let fid = filters
+        .iter()
+        .find(|f| f.get("name").and_then(Value::as_str) == Some("cfg-e2e-extcheck"))
+        .and_then(|f| f.get("id").and_then(Value::as_i64))
+        .expect("filter present");
+    let full: Value = client
+        .get(&format!("/api/filters/{fid}"))
+        .await
+        .expect("get filter");
+    let ext = full["external"]
+        .as_array()
+        .and_then(|a| a.first())
+        .expect("external check present");
+    assert_eq!(
+        ext["on_error"].as_str(),
+        Some("REJECT"),
+        "on_error stored: {ext:?}"
+    );
+    assert_eq!(
+        ext["webhook_headers"].as_str(),
+        Some("X-Api-Key=abc,Accept=application/json"),
+        "webhook_headers stored: {ext:?}"
+    );
+    assert_eq!(
+        ext["webhook_retry_attempts"].as_i64(),
+        Some(3),
+        "webhook_retry_attempts stored: {ext:?}"
+    );
+
+    // Idempotent — the subset diff over the new external fields must settle.
+    let second = run(&url, &key, cfg, ApplyOptions::default()).await;
+    assert_eq!(
+        second.updated, 0,
+        "second external-check apply is a no-op: {second:?}"
+    );
+}
+
+/// The usenet download-client types added to the enum (`SABNZBD`, `NZBGET`).
+/// autobrr doesn't test-connect on create, so a clean apply + a read-back of the
+/// stored `type` proves the values are real and accepted.
+#[tokio::test]
+#[ignore]
+async fn download_client_usenet_types() {
+    use core_lib::Service;
+
+    let Some((url, key)) = env() else { return };
+    let cfg = json!({ "download_clients": [
+        {
+            "name": "cfg-e2e-sab", "client_type": "SABNZBD", "enabled": true,
+            "host": "http://localhost:8085", "settings": { "apikey": "sabkey" },
+        },
+        {
+            "name": "cfg-e2e-nzbget", "client_type": "NZBGET", "enabled": true,
+            "host": "http://localhost:6789", "username": "nzbget", "password": "tegbzn6789",
+        },
+    ] });
+
+    run(&url, &key, cfg.clone(), ApplyOptions::default()).await;
+
+    let (svc, _) = instance::<AutobrrV1>(&url, &key, json!({}));
+    let client = core_lib::apply::connect(&svc.connection())
+        .await
+        .expect("connect");
+    let clients: Vec<Value> = client
+        .get("/api/download_clients")
+        .await
+        .expect("list clients");
+    for (name, ty) in [("cfg-e2e-sab", "SABNZBD"), ("cfg-e2e-nzbget", "NZBGET")] {
+        let dc = clients
+            .iter()
+            .find(|c| c.get("name").and_then(Value::as_str) == Some(name))
+            .unwrap_or_else(|| panic!("{name} present in {clients:?}"));
+        assert_eq!(
+            dc["type"].as_str(),
+            Some(ty),
+            "{name} stored as {ty}: {dc:?}"
+        );
+    }
+
+    let second = run(&url, &key, cfg, ApplyOptions::default()).await;
+    assert_eq!(
+        second.created, 0,
+        "second usenet apply creates nothing: {second:?}"
+    );
+}

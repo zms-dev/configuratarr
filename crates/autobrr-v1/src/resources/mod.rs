@@ -25,6 +25,7 @@ pub mod notification_event;
 
 // crud collections
 pub mod download_client;
+pub mod download_client_auth;
 pub mod download_client_basic;
 pub mod download_client_rules;
 pub mod download_client_settings;
