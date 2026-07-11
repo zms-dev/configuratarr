@@ -84,4 +84,9 @@ in
     inherit pkgs;
     e2eShell = e2e;
   };
+
+  e2e-lazylibrarian = import ./e2e-shells/lazylibrarian-v1.nix {
+    inherit pkgs;
+    e2eShell = e2e;
+  };
 }

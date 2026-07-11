@@ -39,10 +39,11 @@ impl CustomSync for AuthKey {
             let client = client.clone();
             reconcile::create_only(desired, "app", &present, execute, move |app, _cfg| {
                 let client = client.clone();
-                // The key is issued via a query param; the body is ignored.
+                // The key is issued via a query param (core-http encodes it); the
+                // body is ignored.
                 async move {
                     let _: Value = client
-                        .post(&format!("/Auth/Keys?app={app}"), &Value::Null)
+                        .post_query("/Auth/Keys", &[("app", app.as_str())], &Value::Null)
                         .await?;
                     Ok(())
                 }

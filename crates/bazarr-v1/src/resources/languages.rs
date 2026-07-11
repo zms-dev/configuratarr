@@ -50,7 +50,7 @@ pub struct Languages {
 /// needed. Building the desired in the read shape makes the diff structural and
 /// the write idempotent.
 fn wire_profile(p: &Value) -> anyhow::Result<Value> {
-    engine::encode(&engine::decode_config::<LanguageProfile>(p)?)
+    engine::encode_config::<LanguageProfile>(p)
 }
 
 /// The declared profiles as bazarr wire JSON, sorted by `profileId` for an

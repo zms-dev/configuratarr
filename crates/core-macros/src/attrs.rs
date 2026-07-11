@@ -232,6 +232,7 @@ pub struct ServiceArgs {
 pub enum AuthSpec {
     None,
     ApiKey { header: String },
+    ApiKeyQuery { param: String },
     Bearer,
     Basic,
     FormCookie { login_path: String },
@@ -284,11 +285,20 @@ impl AuthSpec {
             "bearer" => Ok(Self::Bearer),
             "basic" => Ok(Self::Basic),
             "api_key" => {
-                let header = arg("header").ok_or_else(|| {
-                    darling::Error::custom("auth = api_key(...) requires `header = \"<name>\"`")
-                        .with_span(span)
-                })?;
-                Ok(Self::ApiKey { header })
+                // `header = "..."` for the header scheme, or `query = "..."` for
+                // the api-key-in-query-string scheme (LazyLibrarian). Exactly one.
+                match (arg("header"), arg("query")) {
+                    (Some(_), Some(_)) => Err(darling::Error::custom(
+                        "auth = api_key(...) takes either `header` or `query`, not both",
+                    )
+                    .with_span(span)),
+                    (Some(header), None) => Ok(Self::ApiKey { header }),
+                    (None, Some(param)) => Ok(Self::ApiKeyQuery { param }),
+                    (None, None) => Err(darling::Error::custom(
+                        "auth = api_key(...) requires `header = \"<name>\"` or `query = \"<name>\"`",
+                    )
+                    .with_span(span)),
+                }
             }
             "form_cookie" => {
                 let login_path = arg("login_path").ok_or_else(|| {

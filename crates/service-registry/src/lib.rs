@@ -33,6 +33,7 @@ macro_rules! service_registry {
             JellyfinV11 => "jellyfin-v11" : jellyfin_v11::JellyfinV11 = "Jellyfin v11",
             BazarrV1 => "bazarr-v1" : bazarr_v1::BazarrV1 = "Bazarr v1",
             AutobrrV1 => "autobrr-v1" : autobrr_v1::AutobrrV1 = "Autobrr v1",
+            LazyLibrarianV1 => "lazylibrarian-v1" : lazylibrarian_v1::LazyLibrarianV1 = "LazyLibrarian v1",
         }
     };
 }

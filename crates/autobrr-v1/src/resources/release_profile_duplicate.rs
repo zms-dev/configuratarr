@@ -88,7 +88,7 @@ impl CustomSync for ReleaseProfileDuplicate {
             reconcile::create_only(desired, "name", &present, execute, move |_name, cfg| {
                 let client = client.clone();
                 async move {
-                    let wire = engine::encode(&engine::decode_config::<Self>(&cfg)?)?;
+                    let wire = engine::encode_config::<Self>(&cfg)?;
                     let _: Value = client
                         .post("/api/release/profiles/duplicate", &wire)
                         .await?;

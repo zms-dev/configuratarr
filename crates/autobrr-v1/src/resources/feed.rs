@@ -4,21 +4,21 @@
 //!
 //! `sync = custom`, keyed by `name`, create + update by id (`POST /api/feeds`,
 //! `PUT /api/feeds/{id}`); no prune — matching the other autobrr resources.
-//! `api_key`/`cookie` are redacted on read, so idempotency is a structural-subset
-//! test on the readable fields ([`crate::resources::filter::is_subset`]).
+//! `api_key`/`cookie` are redacted on read, so idempotency is the structural-subset
+//! test on the readable fields ([`crate::diff::subset`]); the create/update
+//! skeleton is [`core_lib::reconcile::upsert`].
 //!
 //! FK: `indexer_id` → the managed feed-type indexer this feed polls
 //! (`${ref.indexer.<name>}`). A feed is meaningless without its indexer, so
 //! declare the indexer too and point the feed at it.
 
-use core_lib::engine;
 use core_lib::{
-    Change, ChangeKind, CustomSync, CustomSyncFuture, HttpClient, RefStore, SecretValue,
+    CustomSync, CustomSyncFuture, HttpClient, RefStore, SecretValue, engine, reconcile,
 };
 use core_macros::resource;
 use serde_json::Value;
 
-use crate::resources::filter::is_subset;
+use crate::diff;
 
 /// `/api/feeds` — a configured feed.
 #[resource(sync = custom, case = snake, list = get("/api/feeds"))]
@@ -55,6 +55,20 @@ pub struct Feed {
     pub tls_skip_verify: Option<bool>,
 }
 
+/// autobrr echoes the FK only nested (`indexer.id`), never as a top-level
+/// `indexer_id`, so lift it up before the subset diff — otherwise the resolved
+/// `indexer_id` would re-update forever.
+fn lift_indexer_id(live: &Value) -> Value {
+    let mut norm = live.clone();
+    if let (Some(obj), Some(iid)) = (
+        norm.as_object_mut(),
+        live.get("indexer").and_then(|i| i.get("id")).cloned(),
+    ) {
+        obj.insert("indexer_id".to_string(), iid);
+    }
+    norm
+}
+
 impl CustomSync for Feed {
     fn reconcile<'a>(
         client: &'a HttpClient,
@@ -64,59 +78,35 @@ impl CustomSync for Feed {
     ) -> CustomSyncFuture<'a> {
         Box::pin(async move {
             let live: Vec<Value> = client.get("/api/feeds").await?;
-            let mut changes = Vec::with_capacity(desired.len());
+            // Full desired wire (refs already resolved to ids; id is read-only).
+            let wire: Vec<Value> = desired
+                .iter()
+                .map(engine::encode_config::<Self>)
+                .collect::<anyhow::Result<_>>()?;
 
-            for cfg in desired {
-                let name = cfg
-                    .get("name")
-                    .and_then(Value::as_str)
-                    .ok_or_else(|| anyhow::anyhow!("feed entry is missing `name`"))?;
-                // Full desired wire (refs already resolved to ids; id is read-only).
-                let wire = engine::encode(&engine::decode_config::<Self>(cfg)?)?;
-
-                let existing = live
-                    .iter()
-                    .find(|f| f.get("name").and_then(Value::as_str) == Some(name));
-
-                let kind = match existing {
-                    Some(live_feed) => {
-                        // autobrr echoes the FK only nested (`indexer.id`), never as
-                        // a top-level `indexer_id`, so lift it up for the subset diff
-                        // — otherwise the resolved `indexer_id` would re-update forever.
-                        let mut live_norm = live_feed.clone();
-                        if let (Some(obj), Some(iid)) = (
-                            live_norm.as_object_mut(),
-                            live_feed.get("indexer").and_then(|i| i.get("id")).cloned(),
-                        ) {
-                            obj.insert("indexer_id".to_string(), iid);
-                        }
-                        if is_subset(&wire, &live_norm) {
-                            ChangeKind::Unchanged
-                        } else {
-                            let id = live_feed.get("id").cloned().unwrap_or(Value::Null);
-                            if execute {
-                                let _: Value =
-                                    client.put(&format!("/api/feeds/{id}"), &wire).await?;
-                            }
-                            ChangeKind::Updated
-                        }
+            reconcile::upsert(
+                &wire,
+                &live,
+                "name",
+                |w, l| diff::subset(w, &lift_indexer_id(l)),
+                execute,
+                |w| {
+                    let client = client.clone();
+                    async move {
+                        let _: Value = client.post("/api/feeds", &w).await?;
+                        Ok(())
                     }
-                    None => {
-                        if execute {
-                            let _: Value = client.post("/api/feeds", &wire).await?;
-                        }
-                        ChangeKind::Created
+                },
+                |l, w| {
+                    let client = client.clone();
+                    let id = l.get("id").cloned().unwrap_or(Value::Null);
+                    async move {
+                        let _: Value = client.put(&format!("/api/feeds/{id}"), &w).await?;
+                        Ok(())
                     }
-                };
-
-                changes.push(match kind {
-                    ChangeKind::Created => Change::created(name),
-                    ChangeKind::Updated => Change::updated(name),
-                    ChangeKind::Unchanged => Change::unchanged(name),
-                });
-            }
-
-            Ok(changes)
+                },
+            )
+            .await
         })
     }
 }

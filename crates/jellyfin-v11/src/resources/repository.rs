@@ -51,7 +51,7 @@ impl CustomSync for Repository {
             // Encode each desired config to its wire (PascalCase) form.
             let wire: Vec<Value> = desired
                 .iter()
-                .map(|cfg| engine::encode(&engine::decode_config::<Self>(cfg)?))
+                .map(engine::encode_config::<Self>)
                 .collect::<anyhow::Result<_>>()?;
 
             // Whole-list replace: `reconcile::replace` owns the set diff + the

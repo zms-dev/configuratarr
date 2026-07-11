@@ -45,7 +45,7 @@ pub struct Notifications {
 /// to `false` and `url` renders as an explicit null (see the struct's field
 /// attributes), so no hand-rolled JSON is needed.
 fn wire_provider(p: &Value) -> anyhow::Result<Value> {
-    engine::encode(&engine::decode_config::<Notifier>(p)?)
+    engine::encode_config::<Notifier>(p)
 }
 
 /// Every declared provider already matches the live catalogue entry of the same

@@ -15,12 +15,13 @@
 //! channel keys) are write-only — returned `<redacted>`, so a declared value
 //! reads as drift and re-applies as an update.
 
-use core_lib::engine;
-use core_lib::{Change, CustomSync, CustomSyncFuture, HttpClient, RefStore, SecretValue};
+use core_lib::{
+    CustomSync, CustomSyncFuture, HttpClient, RefStore, SecretValue, engine, reconcile,
+};
 use core_macros::resource;
 use serde_json::Value;
 
-use crate::resources::filter::is_subset;
+use crate::diff;
 use crate::resources::irc_auth::IrcAuth;
 use crate::resources::irc_channel::IrcChannel;
 
@@ -84,46 +85,40 @@ impl CustomSync for IrcNetwork {
     ) -> CustomSyncFuture<'a> {
         Box::pin(async move {
             let live: Vec<Value> = client.get("/api/irc").await?;
-            let mut changes = Vec::with_capacity(desired.len());
+            // Full desired wire (read-only runtime fields omitted by encode).
+            let wire: Vec<Value> = desired
+                .iter()
+                .map(engine::encode_config::<Self>)
+                .collect::<anyhow::Result<_>>()?;
 
-            for cfg in desired {
-                let name = cfg
-                    .get("name")
-                    .and_then(Value::as_str)
-                    .ok_or_else(|| anyhow::anyhow!("irc network entry is missing `name`"))?;
-                // Full desired wire (read-only runtime fields omitted by encode).
-                let wire = engine::encode(&engine::decode_config::<Self>(cfg)?)?;
-
-                let existing = live
-                    .iter()
-                    .find(|n| n.get("name").and_then(Value::as_str) == Some(name));
-
-                let change = match existing {
-                    Some(l) if is_subset(&wire, l) => Change::unchanged(name),
-                    Some(l) => {
-                        if execute {
-                            let id = l.get("id").cloned().unwrap_or(Value::Null);
-                            // autobrr's update reads the id from the body (WHERE
-                            // id=?); `#[id]` omits it on encode, so inject it.
-                            let mut body = wire.clone();
-                            if let Value::Object(m) = &mut body {
-                                m.insert("id".into(), id.clone());
-                            }
-                            let _: Value =
-                                client.put(&format!("/api/irc/network/{id}"), &body).await?;
-                        }
-                        Change::updated(name)
+            reconcile::upsert(
+                &wire,
+                &live,
+                "name",
+                diff::subset,
+                execute,
+                |w| {
+                    let client = client.clone();
+                    async move {
+                        let _: Value = client.post("/api/irc", &w).await?;
+                        Ok(())
                     }
-                    None => {
-                        if execute {
-                            let _: Value = client.post("/api/irc", &wire).await?;
-                        }
-                        Change::created(name)
+                },
+                |l, mut w| {
+                    let client = client.clone();
+                    let id = l.get("id").cloned().unwrap_or(Value::Null);
+                    // autobrr's update reads the id from the body (WHERE id=?);
+                    // `#[id]` omits it on encode, so echo the live id back. The
+                    // update path is irregular (`/api/irc/network/{id}`, not
+                    // `/api/irc/{id}`, which 404s).
+                    reconcile::echo(&mut w, "id", l);
+                    async move {
+                        let _: Value = client.put(&format!("/api/irc/network/{id}"), &w).await?;
+                        Ok(())
                     }
-                };
-                changes.push(change);
-            }
-            Ok(changes)
+                },
+            )
+            .await
         })
     }
 }

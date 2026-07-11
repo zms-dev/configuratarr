@@ -226,6 +226,7 @@ pub async fn connect(conn: &Connection<'_>) -> anyhow::Result<HttpClient> {
     b = match &conn.auth {
         Auth::None => b,
         Auth::ApiKey { header, key } => b.header(header, SecretString::new(key.expose().into())),
+        Auth::ApiKeyQuery { param, key } => b.query(*param, SecretString::new(key.expose().into())),
         Auth::Bearer { token } => b.header(
             "Authorization",
             SecretString::new(format!("Bearer {}", token.expose()).into()),

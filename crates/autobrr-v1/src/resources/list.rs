@@ -3,23 +3,23 @@
 //!
 //! `sync = custom`, keyed by `name`, create + update by id (`POST /api/lists`,
 //! `PUT /api/lists/{id}`); no prune — matching the conservative pattern of the
-//! other autobrr resources. `api_key` is redacted on read, so idempotency is a
-//! structural-subset test on the readable fields ([`crate::resources::filter::is_subset`]),
-//! not a full equality that the redacted secret would always trip.
+//! other autobrr resources. `api_key` is redacted on read, so idempotency is the
+//! structural-subset test on the readable fields ([`crate::diff::subset`]), not a
+//! full equality that the redacted secret would always trip. The create/update
+//! skeleton is [`core_lib::reconcile::upsert`].
 //!
 //! FKs: `client_id` → a managed download client (`${ref.download_client.<name>}`,
 //! required for the *arr list types); `filters[].id` → managed filters
 //! (`${ref.filter.<name>}`). autobrr requires at least one filter for *arr-type
 //! lists and a `url` for the external list types.
 
-use core_lib::engine;
 use core_lib::{
-    Change, ChangeKind, CustomSync, CustomSyncFuture, HttpClient, RefStore, SecretValue,
+    CustomSync, CustomSyncFuture, HttpClient, RefStore, SecretValue, engine, reconcile,
 };
 use core_macros::resource;
 use serde_json::Value;
 
-use crate::resources::filter::is_subset;
+use crate::diff;
 use crate::resources::list_filter::ListFilter;
 
 /// `/api/lists` — a configured list.
@@ -76,49 +76,35 @@ impl CustomSync for List {
     ) -> CustomSyncFuture<'a> {
         Box::pin(async move {
             let live: Vec<Value> = client.get("/api/lists").await?;
-            let mut changes = Vec::with_capacity(desired.len());
+            // Full desired wire (refs already resolved to ids; id is read-only).
+            let wire: Vec<Value> = desired
+                .iter()
+                .map(engine::encode_config::<Self>)
+                .collect::<anyhow::Result<_>>()?;
 
-            for cfg in desired {
-                let name = cfg
-                    .get("name")
-                    .and_then(Value::as_str)
-                    .ok_or_else(|| anyhow::anyhow!("list entry is missing `name`"))?;
-                // Full desired wire (refs already resolved to ids; id is read-only).
-                let wire = engine::encode(&engine::decode_config::<Self>(cfg)?)?;
-
-                let existing = live
-                    .iter()
-                    .find(|l| l.get("name").and_then(Value::as_str) == Some(name));
-
-                let kind = match existing {
-                    Some(live_list) => {
-                        if is_subset(&wire, live_list) {
-                            ChangeKind::Unchanged
-                        } else {
-                            let id = live_list.get("id").cloned().unwrap_or(Value::Null);
-                            if execute {
-                                let _: Value =
-                                    client.put(&format!("/api/lists/{id}"), &wire).await?;
-                            }
-                            ChangeKind::Updated
-                        }
+            reconcile::upsert(
+                &wire,
+                &live,
+                "name",
+                diff::subset,
+                execute,
+                |w| {
+                    let client = client.clone();
+                    async move {
+                        let _: Value = client.post("/api/lists", &w).await?;
+                        Ok(())
                     }
-                    None => {
-                        if execute {
-                            let _: Value = client.post("/api/lists", &wire).await?;
-                        }
-                        ChangeKind::Created
+                },
+                |l, w| {
+                    let client = client.clone();
+                    let id = l.get("id").cloned().unwrap_or(Value::Null);
+                    async move {
+                        let _: Value = client.put(&format!("/api/lists/{id}"), &w).await?;
+                        Ok(())
                     }
-                };
-
-                changes.push(match kind {
-                    ChangeKind::Created => Change::created(name),
-                    ChangeKind::Updated => Change::updated(name),
-                    ChangeKind::Unchanged => Change::unchanged(name),
-                });
-            }
-
-            Ok(changes)
+                },
+            )
+            .await
         })
     }
 }

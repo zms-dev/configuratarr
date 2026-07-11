@@ -126,7 +126,8 @@
             // mkServiceChecks "lidarr-v1" (import ./nix/e2e/lidarr-v1.nix { inherit pkgs; })
             // mkServiceChecks "jellyfin-v11" (import ./nix/e2e/jellyfin-v11.nix { inherit pkgs; })
             // mkServiceChecks "bazarr-v1" (import ./nix/e2e/bazarr-v1.nix { inherit pkgs; })
-            // mkServiceChecks "autobrr-v1" (import ./nix/e2e/autobrr-v1.nix { inherit pkgs; });
+            // mkServiceChecks "autobrr-v1" (import ./nix/e2e/autobrr-v1.nix { inherit pkgs; })
+            // mkServiceChecks "lazylibrarian-v1" (import ./nix/e2e/lazylibrarian-v1.nix { inherit pkgs; });
 
             formatter = pkgs.nixfmt-tree;
 

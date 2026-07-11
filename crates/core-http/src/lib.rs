@@ -11,11 +11,16 @@ use serde_json::Value;
 pub struct HttpClient {
     base_url: String,
     inner: reqwest::Client,
+    /// Query parameters stamped onto **every** request (e.g. an api key carried
+    /// in the query string rather than a header — LazyLibrarian's `?apikey=`).
+    /// `SecretString` so a `{:?}` of the client stays redacted.
+    default_query: Vec<(String, SecretString)>,
 }
 
 pub struct HttpClientBuilder {
     base_url: String,
     headers: Vec<(&'static str, SecretString)>,
+    default_query: Vec<(String, SecretString)>,
     timeout: Duration,
     insecure: bool,
     cookies: bool,
@@ -26,10 +31,30 @@ impl HttpClient {
         HttpClientBuilder {
             base_url: base_url.into(),
             headers: Vec::new(),
+            default_query: Vec::new(),
             timeout: Duration::from_secs(30),
             insecure: false,
             cookies: false,
         }
+    }
+
+    /// Parse `url`, append any `extra` query params, then the default query params
+    /// (the api key). The returned [`reqwest::Url`] carries the secret key, so
+    /// callers keep the plain `url` string for error context — never the merged
+    /// URL. The single place the default query is appended, so every verb (and
+    /// `get_query`/`post_query`, which pass their own `extra`) stays consistent —
+    /// a security-relevant invariant that must not drift between methods. No-op
+    /// when both are empty.
+    fn merged_url(&self, url: &str, extra: &[(&str, &str)]) -> Result<reqwest::Url> {
+        let mut parsed = reqwest::Url::parse(url).with_context(|| format!("parsing URL {url}"))?;
+        if !extra.is_empty() || !self.default_query.is_empty() {
+            let mut qp = parsed.query_pairs_mut();
+            qp.extend_pairs(extra.iter().copied());
+            for (k, v) in &self.default_query {
+                qp.append_pair(k, v.expose_secret());
+            }
+        }
+        Ok(parsed)
     }
 
     /// Establish a form/cookie session: POST `pairs` as an
@@ -42,7 +67,7 @@ impl HttpClient {
         let url = format!("{}{}", self.base_url, login_path);
         let resp = self
             .inner
-            .post(&url)
+            .post(self.merged_url(&url, &[])?)
             .form(pairs)
             .send()
             .await
@@ -54,11 +79,39 @@ impl HttpClient {
         let url = format!("{}{}", self.base_url, path);
         let resp = self
             .inner
-            .get(&url)
+            .get(self.merged_url(&url, &[])?)
             .send()
             .await
             .with_context(|| format!("GET {url}"))?;
         self.parse_json(resp, &url).await
+    }
+
+    /// GET with URL **query parameters**, returning the **raw response body** as a
+    /// string. reqwest percent-encodes each `(name, value)` pair; the default query
+    /// (api key) is appended too. The transport for **query-dispatch** APIs whose
+    /// every command — read *and* write — is `GET /api?cmd=…&<params>`. Non-2xx →
+    /// error (body included). The body is returned uninterpreted: whether it is
+    /// JSON, a bare `OK`, or a service-specific error string is the **caller's** to
+    /// decide (see the LazyLibrarian crate). The `path` (without the secret-bearing
+    /// query) is used for error context, so credentials never leak into logs. The
+    /// GET analog of [`Self::post_query`].
+    pub async fn get_query(&self, path: &str, query: &[(&str, &str)]) -> Result<String> {
+        let url = format!("{}{}", self.base_url, path);
+        let resp = self
+            .inner
+            .get(self.merged_url(&url, query)?)
+            .send()
+            .await
+            .with_context(|| format!("GET {url}"))?;
+        let status = resp.status();
+        let text = resp
+            .text()
+            .await
+            .with_context(|| format!("reading response body from {url}"))?;
+        if !status.is_success() {
+            anyhow::bail!("HTTP {status}: {text}");
+        }
+        Ok(text)
     }
 
     /// POST a JSON body. Writes return their response as opaque JSON (or
@@ -67,7 +120,7 @@ impl HttpClient {
         let url = format!("{}{}", self.base_url, path);
         let resp = self
             .inner
-            .post(&url)
+            .post(self.merged_url(&url, &[])?)
             .json(body)
             .send()
             .await
@@ -85,11 +138,34 @@ impl HttpClient {
         let url = format!("{}{}", self.base_url, path);
         let resp = self
             .inner
-            .post(&url)
+            .post(self.merged_url(&url, &[])?)
             .form(pairs)
             .send()
             .await
             .with_context(|| format!("POST(form) {url}"))?;
+        self.parse_write(resp, &url).await
+    }
+
+    /// POST a JSON body with URL **query parameters**. reqwest percent-encodes
+    /// each `(name, value)` pair (repeated names survive, e.g. Jellyfin's
+    /// `paths`) — the seam for APIs that carry a resource's identity/params in the
+    /// query string rather than the JSON body (Jellyfin libraries keyed by
+    /// `name`/`paths`, api keys by `app`), so a hook never hand-builds an escaped
+    /// query string. Response handled like any other write.
+    pub async fn post_query<B: Serialize>(
+        &self,
+        path: &str,
+        query: &[(&str, &str)],
+        body: &B,
+    ) -> Result<Value> {
+        let url = format!("{}{}", self.base_url, path);
+        let resp = self
+            .inner
+            .post(self.merged_url(&url, query)?)
+            .json(body)
+            .send()
+            .await
+            .with_context(|| format!("POST {url}"))?;
         self.parse_write(resp, &url).await
     }
 
@@ -98,7 +174,7 @@ impl HttpClient {
         let url = format!("{}{}", self.base_url, path);
         let resp = self
             .inner
-            .put(&url)
+            .put(self.merged_url(&url, &[])?)
             .json(body)
             .send()
             .await
@@ -111,7 +187,7 @@ impl HttpClient {
         let url = format!("{}{}", self.base_url, path);
         let resp = self
             .inner
-            .patch(&url)
+            .patch(self.merged_url(&url, &[])?)
             .json(body)
             .send()
             .await
@@ -123,7 +199,7 @@ impl HttpClient {
         let url = format!("{}{}", self.base_url, path);
         let resp = self
             .inner
-            .delete(&url)
+            .delete(self.merged_url(&url, &[])?)
             .send()
             .await
             .with_context(|| format!("DELETE {url}"))?;
@@ -271,6 +347,14 @@ impl HttpClientBuilder {
         self
     }
 
+    /// Register a query parameter stamped onto every request — the seam for
+    /// api-key-in-query auth (`Auth::ApiKeyQuery`). Off by default; only
+    /// query-auth services set it.
+    pub fn query(mut self, name: impl Into<String>, value: SecretString) -> Self {
+        self.default_query.push((name.into(), value));
+        self
+    }
+
     pub fn timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
         self
@@ -311,6 +395,7 @@ impl HttpClientBuilder {
         Ok(HttpClient {
             base_url: self.base_url,
             inner,
+            default_query: self.default_query,
         })
     }
 }
@@ -352,6 +437,37 @@ mod tests {
             .build()
             .unwrap();
         assert_eq!(client.base_url, "http://localhost:7878");
+    }
+
+    #[test]
+    fn builder_with_default_query() {
+        let client = HttpClient::builder("http://localhost:5299")
+            .query("apikey", SecretString::new("deadbeef".into()))
+            .build()
+            .unwrap();
+        // The default query param is appended to the merged URL, alongside any
+        // query already present on the path (e.g. `?cmd=…`) and the call's `extra`.
+        let merged = client
+            .merged_url("http://localhost:5299/api?cmd=getVersion", &[("name", "X")])
+            .unwrap();
+        let pairs: Vec<(String, String)> = merged
+            .query_pairs()
+            .map(|(k, v)| (k.into_owned(), v.into_owned()))
+            .collect();
+        assert!(pairs.contains(&("cmd".into(), "getVersion".into())));
+        assert!(pairs.contains(&("name".into(), "X".into())));
+        assert!(pairs.contains(&("apikey".into(), "deadbeef".into())));
+    }
+
+    #[test]
+    fn merged_url_noop_without_default_query_or_extra() {
+        let client = HttpClient::builder("http://localhost:7878")
+            .build()
+            .unwrap();
+        let merged = client
+            .merged_url("http://localhost:7878/api/v3/tag", &[])
+            .unwrap();
+        assert_eq!(merged.as_str(), "http://localhost:7878/api/v3/tag");
     }
 
     #[test]

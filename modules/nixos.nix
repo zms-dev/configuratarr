@@ -33,6 +33,7 @@ in
         "jellyfin.service"
         "bazarr.service"
         "autobrr.service"
+        "lazylibrarian.service"
       ];
 
       serviceConfig = {

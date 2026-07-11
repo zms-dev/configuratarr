@@ -10,9 +10,9 @@
 //!
 //! **Idempotency.** Live filters carry server-added fields — an `id`, and ids on
 //! nested `actions` — that the desired config never sets. So "changed?" is a
-//! **structural subset** test ([`is_subset`]): the filter is in sync when every
-//! declared key/value already matches live (extra server keys are ignored),
-//! rather than a merge-equality that server ids would always trip.
+//! **structural subset** test ([`crate::diff::subset`]): the filter is in sync
+//! when every declared key/value already matches live (extra server keys are
+//! ignored), rather than a merge-equality that server ids would always trip.
 
 use std::collections::HashSet;
 
@@ -21,6 +21,7 @@ use core_lib::{Change, ChangeKind, CustomSync, CustomSyncFuture, HttpClient, Ref
 use core_macros::resource;
 use serde_json::{Map, Value, json};
 
+use crate::diff;
 use crate::resources::action::Action;
 use crate::resources::external_filter::ExternalFilter;
 use crate::resources::filter_indexer::FilterIndexer;
@@ -210,50 +211,6 @@ fn create_body(wire: &Value) -> Value {
     Value::Object(out)
 }
 
-/// An empty declared value — one that can't meaningfully differ from a server
-/// default (autobrr returns unset lists as `null`/absent and unset scalars as
-/// `""`). Treated as always in-sync, since the typed `Vec`/`Option` fields can't
-/// distinguish "declared empty" from "omitted".
-pub(crate) fn is_empty(v: &Value) -> bool {
-    match v {
-        Value::Null => true,
-        Value::String(s) => s.is_empty(),
-        Value::Array(a) => a.is_empty(),
-        _ => false,
-    }
-}
-
-/// True when every value in `want` is already present (structurally) in `have`:
-/// an empty declared value is always satisfied; objects match key-by-key on
-/// `want`'s keys (extra `have` keys — e.g. server ids — ignored); arrays match
-/// element-wise; scalars compare numeric-insensitively.
-pub(crate) fn is_subset(want: &Value, have: &Value) -> bool {
-    if is_empty(want) {
-        return true;
-    }
-    // autobrr stores an unset nilable `*bool` as null, so a declared `false`
-    // reads back as null (or false). Treat those as equal. Non-nullable bools
-    // (e.g. irc `enabled`) always read back as a real boolean, never null, so a
-    // genuine `true → false` toggle still diffs and triggers an update.
-    if want == &Value::Bool(false) && (have.is_null() || have == &Value::Bool(false)) {
-        return true;
-    }
-    match (want, have) {
-        // A key absent from `have` is compared as null, so an empty/`false`
-        // declared value (which autobrr drops on write) still counts as in sync.
-        (Value::Object(w), Value::Object(h)) => w
-            .iter()
-            .all(|(k, wv)| is_subset(wv, h.get(k).unwrap_or(&Value::Null))),
-        (Value::Array(w), Value::Array(h)) => {
-            w.len() == h.len() && w.iter().zip(h).all(|(wv, hv)| is_subset(wv, hv))
-        }
-        _ => match (want.as_f64(), have.as_f64()) {
-            (Some(a), Some(b)) => a == b,
-            _ => want == have,
-        },
-    }
-}
-
 /// Actions are keyed by `name` for identity. autobrr's action store is
 /// *upsert-by-id with no delete* (unlike the filter's indexers/external, which
 /// it replaces wholesale), so a managed filter's actions must carry a stable,
@@ -313,7 +270,7 @@ fn plan_actions(wire: &mut Value, full: &Value) -> (bool, Vec<i64>) {
                     let id = l.get("id").and_then(Value::as_i64).unwrap_or_default();
                     claimed.insert(id);
                     // Compare before injecting the id (the live side carries it).
-                    if !is_subset(d, l) {
+                    if !diff::subset(d, l) {
                         synced = false;
                     }
                     if let Some(obj) = d.as_object_mut() {
@@ -355,7 +312,7 @@ impl CustomSync for Filter {
                     .and_then(Value::as_str)
                     .ok_or_else(|| anyhow::anyhow!("filter entry is missing `name`"))?;
                 // Full desired wire (id is read-only, so absent here).
-                let mut wire = engine::encode(&engine::decode_config::<Self>(cfg)?)?;
+                let mut wire = engine::encode_config::<Self>(cfg)?;
                 validate_action_names(name, &wire)?;
 
                 // The list endpoint returns a *trimmed* filter (no match/except
@@ -375,7 +332,7 @@ impl CustomSync for Filter {
                         // collect undeclared/duplicate actions to prune.
                         let (actions_synced, prune) = plan_actions(&mut wire, &full);
 
-                        // Diff the rest of the filter separately — `is_subset`
+                        // Diff the rest of the filter separately — `subset`
                         // compares arrays positionally, which is wrong for
                         // actions (matched by name above).
                         let mut scalars = wire.clone();
@@ -383,7 +340,7 @@ impl CustomSync for Filter {
                             obj.remove("actions");
                         }
 
-                        if is_subset(&scalars, &full) && actions_synced {
+                        if diff::subset(&scalars, &full) && actions_synced {
                             // Already in sync — nothing to do.
                             ChangeKind::Unchanged
                         } else {

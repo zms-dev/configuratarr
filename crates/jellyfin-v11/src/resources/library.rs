@@ -36,45 +36,33 @@ impl CustomSync for Library {
             reconcile::create_only(desired, "name", &present, execute, move |name, cfg| {
                 let client = client.clone();
                 async move {
-                    // Identity + paths go in the query string;
-                    // `refreshLibrary=false` avoids a scan during apply.
-                    let mut q = format!(
-                        "/Library/VirtualFolders?refreshLibrary=false&name={}",
-                        urlencode(&name)
-                    );
+                    // Identity + paths ride the query string (core-http encodes
+                    // them); `refreshLibrary=false` avoids a scan during apply.
+                    let mut query: Vec<(&str, &str)> =
+                        vec![("refreshLibrary", "false"), ("name", name.as_str())];
                     if let Some(ct) = cfg.get("collection_type").and_then(Value::as_str) {
-                        q.push_str(&format!("&collectionType={}", urlencode(ct)));
+                        query.push(("collectionType", ct));
                     }
                     for p in cfg
                         .get("paths")
                         .and_then(Value::as_array)
                         .into_iter()
                         .flatten()
+                        .filter_map(Value::as_str)
                     {
-                        if let Some(p) = p.as_str() {
-                            q.push_str(&format!("&paths={}", urlencode(p)));
-                        }
+                        query.push(("paths", p));
                     }
-                    let _: Value = client.post(&q, &json!({ "LibraryOptions": {} })).await?;
+                    let _: Value = client
+                        .post_query(
+                            "/Library/VirtualFolders",
+                            &query,
+                            &json!({ "LibraryOptions": {} }),
+                        )
+                        .await?;
                     Ok(())
                 }
             })
             .await
         })
     }
-}
-
-/// Minimal percent-encoding for query values (space + the reserved chars that
-/// break a query string). Enough for names and filesystem paths.
-fn urlencode(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for b in s.bytes() {
-        match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' | b'/' => {
-                out.push(b as char)
-            }
-            _ => out.push_str(&format!("%{b:02X}")),
-        }
-    }
-    out
 }

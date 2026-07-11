@@ -19,8 +19,7 @@
 //! seam carries no `prune` flag; matches the "don't delete server-owned defs"
 //! caution).
 
-use core_lib::engine;
-use core_lib::{Change, CustomSync, CustomSyncFuture, HttpClient, Json, RefStore};
+use core_lib::{CustomSync, CustomSyncFuture, HttpClient, Json, RefStore, engine, reconcile};
 use core_macros::resource;
 use serde_json::Value;
 
@@ -78,48 +77,41 @@ impl CustomSync for Indexer {
     ) -> CustomSyncFuture<'a> {
         Box::pin(async move {
             let live: Vec<Value> = client.get("/api/indexer").await?;
-            let mut changes = Vec::with_capacity(desired.len());
+            // Full desired wire: { name, identifier(base), implementation,
+            // enabled, settings{...} }.
+            let wire: Vec<Value> = desired
+                .iter()
+                .map(engine::encode_config::<Self>)
+                .collect::<anyhow::Result<_>>()?;
 
-            for cfg in desired {
-                let name = cfg
-                    .get("name")
-                    .and_then(Value::as_str)
-                    .ok_or_else(|| anyhow::anyhow!("indexer entry is missing `name`"))?;
-                // Full desired wire: { name, identifier(base), implementation,
-                // enabled, settings{...} }.
-                let wire = engine::encode(&engine::decode_config::<Self>(cfg)?)?;
-
-                let existing = live
-                    .iter()
-                    .find(|i| i.get("name").and_then(Value::as_str) == Some(name));
-
-                let change = match existing {
-                    Some(l) if readable_matches(&wire, l) => Change::unchanged(name),
-                    Some(l) => {
-                        if execute {
-                            let id = l.get("id").cloned().unwrap_or(Value::Null);
-                            // Echo the server-stored identifier — the base id 500s.
-                            let mut body = wire.clone();
-                            if let Value::Object(m) = &mut body {
-                                m.insert("id".into(), id.clone());
-                                if let Some(ident) = l.get("identifier") {
-                                    m.insert("identifier".into(), ident.clone());
-                                }
-                            }
-                            let _: Value = client.put(&format!("/api/indexer/{id}"), &body).await?;
-                        }
-                        Change::updated(name)
+            reconcile::upsert(
+                &wire,
+                &live,
+                "name",
+                readable_matches,
+                execute,
+                |w| {
+                    let client = client.clone();
+                    async move {
+                        let _: Value = client.post("/api/indexer", &w).await?;
+                        Ok(())
                     }
-                    None => {
-                        if execute {
-                            let _: Value = client.post("/api/indexer", &wire).await?;
-                        }
-                        Change::created(name)
+                },
+                |l, mut w| {
+                    let client = client.clone();
+                    let id = l.get("id").cloned().unwrap_or(Value::Null);
+                    // autobrr reads the id from the body, and the base `identifier`
+                    // 500s on update ("could not find definition") — it must echo
+                    // the server-rewritten stored identifier instead.
+                    reconcile::echo(&mut w, "id", l);
+                    reconcile::echo(&mut w, "identifier", l);
+                    async move {
+                        let _: Value = client.put(&format!("/api/indexer/{id}"), &w).await?;
+                        Ok(())
                     }
-                };
-                changes.push(change);
-            }
-            Ok(changes)
+                },
+            )
+            .await
         })
     }
 }

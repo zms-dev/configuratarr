@@ -254,6 +254,35 @@ fn connection_auth_none() {
     assert!(matches!(conn.auth, Auth::None));
 }
 
+// ── auth = api_key(query = …) ─────────────────────────────────────────────────
+
+#[service(
+    name = "query_key_service",
+    health = "/api?cmd=getVersion",
+    auth = api_key(query = "apikey"),
+)]
+pub struct QueryKeyService {
+    pub url: String,
+    #[credential(api_key)]
+    pub api_key: SecretValue,
+}
+
+#[test]
+fn connection_api_key_query_auth() {
+    let svc = QueryKeyService {
+        url: "http://localhost:5299".to_string(),
+        api_key: SecretValue::new("deadbeef".to_string()),
+    };
+    let conn = svc.connection();
+    match conn.auth {
+        Auth::ApiKeyQuery { param, key } => {
+            assert_eq!(param, "apikey");
+            assert_eq!(key.expose(), "deadbeef");
+        }
+        _ => panic!("expected Auth::ApiKeyQuery"),
+    }
+}
+
 // ── auth = form_cookie ────────────────────────────────────────────────────────
 
 #[service(

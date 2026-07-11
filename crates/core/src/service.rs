@@ -100,6 +100,15 @@ pub enum Auth<'a> {
         key: &'a SecretValue,
     },
 
+    /// API key carried as a URL query parameter on every request (e.g.
+    /// LazyLibrarian's `?apikey=`). [`connect`](crate::apply::connect) registers
+    /// it as a default query pair on the client so it rides every request,
+    /// including the authenticated health check.
+    ApiKeyQuery {
+        param: &'static str,
+        key: &'a SecretValue,
+    },
+
     /// Bearer token in the `Authorization` header.
     Bearer {
         token: &'a SecretValue,

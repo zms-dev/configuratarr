@@ -81,7 +81,7 @@ impl CustomSync for Notification {
                 let client = client.clone();
                 async move {
                     // Encode through the descriptor so `type`/secrets land right.
-                    let wire = engine::encode(&engine::decode_config::<Self>(&cfg)?)?;
+                    let wire = engine::encode_config::<Self>(&cfg)?;
                     let _: Value = client.post("/api/notification", &wire).await?;
                     Ok(())
                 }

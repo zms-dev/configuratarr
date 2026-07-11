@@ -38,6 +38,14 @@ pub fn decode_config<T: Described>(value: &serde_json::Value) -> anyhow::Result<
     codec::config::decode(value)
 }
 
+/// Config → wire in one step: [`decode_config`] then [`encode`]. The full
+/// (non-masked) counterpart to [`config_present_to_wire`] — the recurring
+/// `encode(&decode_config::<T>(cfg)?)` a `sync = custom` hook runs to turn one
+/// resolved config entry into its API wire shape.
+pub fn encode_config<T: Described>(value: &serde_json::Value) -> anyhow::Result<serde_json::Value> {
+    encode(&decode_config::<T>(value)?)
+}
+
 /// Config → wire keeping only the keys the user wrote (presence-masked). For
 /// singletons / partial config — see [`crate::codec::config::present_to_wire`].
 pub fn config_present_to_wire<T: Described>(
