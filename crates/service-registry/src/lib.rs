@@ -29,6 +29,11 @@ macro_rules! service_registry {
             RadarrV3 => "radarr-v3" : radarr_v3::RadarrV3 = "Radarr v3",
             SonarrV3 => "sonarr-v3" : sonarr_v3::SonarrV3 = "Sonarr v3",
             ProwlarrV1 => "prowlarr-v1" : prowlarr_v1::ProwlarrV1 = "Prowlarr v1",
+            LidarrV1 => "lidarr-v1" : lidarr_v1::LidarrV1 = "Lidarr v1",
+            JellyfinV11 => "jellyfin-v11" : jellyfin_v11::JellyfinV11 = "Jellyfin v11",
+            BazarrV1 => "bazarr-v1" : bazarr_v1::BazarrV1 = "Bazarr v1",
+            AutobrrV1 => "autobrr-v1" : autobrr_v1::AutobrrV1 = "Autobrr v1",
+            LazyLibrarianV1 => "lazylibrarian-v1" : lazylibrarian_v1::LazyLibrarianV1 = "LazyLibrarian v1",
         }
     };
 }

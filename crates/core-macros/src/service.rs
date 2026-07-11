@@ -277,6 +277,14 @@ fn build_auth(
             Ok(quote!(::core_lib::Auth::ApiKey { header: #header, key: &self.#kf }))
         }
 
+        AuthSpec::ApiKeyQuery { param } => {
+            let kf = by_role(
+                CredentialRole::ApiKey,
+                "auth = api_key(query = ...) requires a field with `#[credential(api_key)]`",
+            )?;
+            Ok(quote!(::core_lib::Auth::ApiKeyQuery { param: #param, key: &self.#kf }))
+        }
+
         AuthSpec::Bearer => {
             let tf = by_role(
                 CredentialRole::Bearer,

@@ -1,8 +1,21 @@
 //! Static descriptors emitted by the `#[resource]` macro — the macro's entire
 //! output. The engine reads them at runtime to drive encode/decode/resolve.
 
+use crate::apply::CustomSyncFn;
 use crate::codec::CodecKind;
 use crate::field::{FieldRef, FieldRole, FieldValue};
+
+/// Default wire-key casing for fields without an explicit `#[wire(name)]`.
+/// `Camel` is snake→camelCase (the *arr shape); `Pascal` upper-cases the first
+/// character too, for .NET-style APIs (Jellyfin) whose JSON is PascalCase;
+/// `Snake` is identity — the wire key *is* the snake field name (bazarr, whose
+/// settings JSON is snake_case).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Case {
+    Camel,
+    Pascal,
+    Snake,
+}
 
 /// An HTTP verb, always declared explicitly at the `#[resource]` site (no
 /// inferred defaults).
@@ -63,8 +76,14 @@ pub struct ResourceDescriptor<T: 'static> {
     /// Which wire-format codec the engine dispatches to.
     pub codec: CodecKind,
 
+    /// How a field's wire key is cased when it has no explicit `#[wire(name)]`.
+    /// The Standard/config codecs read this; `FieldsBlob` variants are always
+    /// camelCase (*arr). Data, not behaviour — the codec applies it.
+    pub case: Case,
+
     /// Write strategy. Orthogonal to `codec` and field roles; always explicit —
     /// the write contract varies per API, never inferred from struct shape.
+    /// `Custom` carries its reconcile hook inline.
     pub sync: SyncKind,
 
     /// Codec-specific metadata; interpretation depends on `codec`. For
@@ -113,6 +132,11 @@ pub enum DefaultLit {
     Str(&'static str),
 }
 
+/// Recurses reference-target collection into a nested field's inner type:
+/// `fn(out, seen)`, appending targets to `out` and using `seen` (type names) to
+/// terminate cyclic nesting. See [`FieldDescriptor::nested_reference_targets`].
+pub type NestedRefCollector = fn(&mut Vec<&'static str>, &mut Vec<&'static str>);
+
 /// Static description of one field on a resource.
 pub struct FieldDescriptor<T: 'static> {
     /// Snake-case Rust field name; the codec maps it to the wire name.
@@ -136,6 +160,18 @@ pub struct FieldDescriptor<T: 'static> {
     /// `implementationName`, `message`). Id fields are implicitly read-only.
     pub read_only: bool,
 
+    /// `#[wire(null)]` — emit a `None` optional as JSON `null` rather than
+    /// omitting the key. For APIs whose diff/replace compares the *whole* object
+    /// (bazarr's form-encoded settings round-trip nulls verbatim), so an omitted
+    /// key would make the desired object structurally differ from the live one.
+    /// Standard codec only.
+    pub emit_none: bool,
+
+    /// `#[wire(int)]` — encode a `bool` (or `Option<bool>`) as the integer `0`/`1`
+    /// on the wire, and decode `0`/`1` back to a bool. For APIs that store
+    /// booleans as ints (bazarr `originalFormat`). Standard codec only.
+    pub as_int: bool,
+
     /// Non-zero `#[default(expr)]`. `None` means type default. Applied by the
     /// config decode for absent keys, and read by doc-gen.
     pub default: Option<DefaultLit>,
@@ -155,8 +191,9 @@ pub struct FieldDescriptor<T: 'static> {
     /// `{name, value}` entries. Only the standard wire codec acts on this flag.
     pub fields_map: bool,
 
-    /// Reference target type from `#[reference(<type>)]`: this plain `i32` /
-    /// `Vec<i32>` field is resolved from a `${ref.<type>.<key>}` expression.
+    /// Reference target type from `#[reference(<type>)]`: this FK field (an
+    /// `i32`/`Vec<i32>` for *arr integer ids, or a `String` for GUID APIs) is
+    /// resolved from a `${ref.<type>.<key>}` expression to the target's [`RefId`].
     /// Drives the dependency graph.
     pub reference: Option<&'static str>,
 
@@ -164,6 +201,21 @@ pub struct FieldDescriptor<T: 'static> {
     /// provider for the inner type's docs — so doc-gen can render its section
     /// even when the value is absent in an `empty()` instance. `None` otherwise.
     pub nested_docs: Option<fn() -> crate::engine::ResourceDoc>,
+
+    /// For a nested-type field, recurse [`crate::engine::collect_reference_targets`]
+    /// into the inner type — collecting its `#[reference]` targets into `out`,
+    /// with `seen` guarding self-/mutually-recursive nested types (e.g. a quality
+    /// group whose items nest the same type). Lets `reference_targets` reach a
+    /// `Vec<Nested>`/`Option<Nested>` FK without an instance (an `empty()`
+    /// list/option is empty). `None` for non-nested fields.
+    pub nested_reference_targets: Option<NestedRefCollector>,
+
+    /// For a nested single-object field (`Nested` / `Option<Nested>`), the inner
+    /// type's presence-masked config→wire, so `present_to_wire` masks the nested
+    /// object to the keys the user actually wrote (not the whole struct with type
+    /// defaults). Without it, presence masking would only apply one level deep.
+    /// `None` for scalars and `Vec<Nested>`.
+    pub nested_present: Option<fn(&serde_json::Value) -> anyhow::Result<serde_json::Value>>,
 
     /// Read the field's current value as a borrowed [`FieldRef`].
     pub get: fn(&T) -> FieldRef<'_>,
@@ -177,14 +229,14 @@ pub struct FieldDescriptor<T: 'static> {
 /// apply time like [`CodecKind`] is at encode time; new API contracts add a
 /// variant plus a hand-written arm in the apply engine. Independent of identity
 /// (`#[key]`) and wire format (`codec`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// Not `PartialEq`: the `Custom` variant carries a fn-pointer, whose equality is
+/// unpredictable (codegen may merge/split addresses). Match on it instead.
+#[derive(Debug, Clone, Copy)]
 pub enum SyncKind {
     /// Per-element CRUD against a collection endpoint: list, POST new, PUT
     /// changed, DELETE pruned. The *arr default.
     Crud,
-
-    /// Replace the whole collection in one PUT. No per-element ids.
-    BulkReplace,
 
     /// Single object behind one endpoint: GET current, PUT merged. No key.
     Singleton,
@@ -194,9 +246,10 @@ pub enum SyncKind {
     /// [`Endpoints::NONE`].
     Embedded,
 
-    /// Escape hatch for a write contract no reusable strategy fits; dispatches
-    /// to a hand-written hook in the contributor's crate.
-    Custom,
+    /// Escape hatch for a write contract no reusable strategy fits: carries a
+    /// hand-written [`CustomSync`](crate::CustomSync) hook that owns the whole
+    /// reconcile (its own HTTP, ordering, idempotency).
+    Custom(CustomSyncFn),
 }
 
 /// Codec-specific metadata attached to a [`ResourceDescriptor`]. Variants are

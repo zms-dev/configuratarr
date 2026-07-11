@@ -32,6 +32,8 @@ pub struct Tag {
 
 That's a complete, working resource. You told it the endpoints, that it's a normal create/read/update/delete thing (`sync = crud`), which field is the server id, and which field is the name people reference. Done.
 
+`crud` is the common case. A config object with no key is `sync = singleton`; and an API that doesn't fit either (multi-endpoint writes, server-generated GUID ids, whole-list replaces — e.g. Jellyfin users/libraries/repositories) is `sync = custom` with a reconcile hook. For the recurring hook shapes, don't hand-roll the write loop — build on the `core::reconcile` primitives (`create_only`, `upsert`, `replace`), which own the preview gate so a `plan` can't accidentally write. `upsert` covers the common "create-or-update by key, no prune" case for APIs that don't round-trip their writes (you pass an `in_sync` idempotency predicate instead of relying on merge-equality). Non-*arr apps that serialise PascalCase add `case = pascal`. The `core-architecture` skill covers these; reach for them only when the plain `crud`/`singleton` shape doesn't fit.
+
 ---
 
 ## Adding a download client / indexer / notification / import list

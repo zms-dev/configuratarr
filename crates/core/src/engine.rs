@@ -38,6 +38,14 @@ pub fn decode_config<T: Described>(value: &serde_json::Value) -> anyhow::Result<
     codec::config::decode(value)
 }
 
+/// Config → wire in one step: [`decode_config`] then [`encode`]. The full
+/// (non-masked) counterpart to [`config_present_to_wire`] — the recurring
+/// `encode(&decode_config::<T>(cfg)?)` a `sync = custom` hook runs to turn one
+/// resolved config entry into its API wire shape.
+pub fn encode_config<T: Described>(value: &serde_json::Value) -> anyhow::Result<serde_json::Value> {
+    encode(&decode_config::<T>(value)?)
+}
+
 /// Config → wire keeping only the keys the user wrote (presence-masked). For
 /// singletons / partial config — see [`crate::codec::config::present_to_wire`].
 pub fn config_present_to_wire<T: Described>(
@@ -64,25 +72,43 @@ pub fn key_wire_name<T: Described>() -> Option<String> {
 /// through nested/`#[flatten]` structs — so a ref on a flattened envelope (e.g.
 /// `Provider.tags`) is still seen. Drives apply ordering.
 ///
-/// Walks an `empty()` instance's erased view; references inside `Vec<Nested>`
-/// fields aren't reachable (the vec is empty) — a known, rare gap.
+/// Walks the **static** descriptor (no instance): each field contributes its own
+/// `#[reference]` and, for a nested field, its inner type's targets via the
+/// macro-emitted [`FieldDescriptor::nested_reference_targets`]. That accessor is
+/// how a `Vec<Nested>`/`Option<Nested>` FK is reached — an `empty()` instance's
+/// list/option is empty, so an instance walk can't see the element type (the bug
+/// that let `filter.indexers[].id → indexer` escape the apply-order graph).
+/// `#[flatten]` fields are nested, so their FKs (e.g. the *arr `Provider.tags`)
+/// recurse too. Unlike a doc-tree walk, read-only fields are **not** skipped.
+///
+/// `seen` (by resource type name) guards self-/mutually-recursive nested types —
+/// e.g. radarr's `QualityProfileItem`, whose `items` nest the same type.
 pub fn reference_targets<T: Described>() -> Vec<&'static str> {
     let mut out = Vec::new();
-    collect_reference_targets(T::empty().descriptor_erased(), &mut out);
+    let mut seen = Vec::new();
+    collect_reference_targets::<T>(&mut out, &mut seen);
     out
 }
 
-fn collect_reference_targets(
-    d: crate::described::ResourceDescriptorErased<'_>,
+/// Collect `T`'s `#[reference]` targets (its own + those of its nested types)
+/// into `out`, recursing via the macro-emitted per-field accessors. `seen` tracks
+/// visited type names so a cyclic nesting terminates. Public because the
+/// generated `nested_reference_targets` closures re-enter it for the inner type.
+pub fn collect_reference_targets<T: Described>(
     out: &mut Vec<&'static str>,
+    seen: &mut Vec<&'static str>,
 ) {
-    use crate::field::FieldRef;
-    for f in d.fields.iter {
+    let tn = T::descriptor().type_name;
+    if seen.contains(&tn) {
+        return;
+    }
+    seen.push(tn);
+    for f in T::descriptor().fields {
         if let Some(r) = f.reference {
             out.push(r);
         }
-        if let FieldRef::Nested(n) = f.value {
-            collect_reference_targets(n.descriptor_erased(), out);
+        if let Some(nested) = f.nested_reference_targets {
+            nested(out, seen);
         }
     }
 }
@@ -287,7 +313,7 @@ fn collect_secret_keys(d: crate::described::ResourceDescriptorErased<'_>, out: &
     use crate::field::FieldRef;
     for f in d.fields.iter {
         if f.secret {
-            out.push(codec::standard::wire_key(f.name, f.wire_name));
+            out.push(codec::standard::wire_key(f.name, f.wire_name, d.case));
         }
         if f.flatten
             && let FieldRef::Nested(n) = f.value
@@ -301,7 +327,7 @@ fn find_key(d: crate::described::ResourceDescriptorErased<'_>) -> Option<String>
     use crate::field::{FieldRef, FieldRole};
     for f in d.fields.iter {
         if f.role == FieldRole::Key {
-            return Some(codec::standard::wire_key(f.name, f.wire_name));
+            return Some(codec::standard::wire_key(f.name, f.wire_name, d.case));
         }
         if f.flatten
             && let FieldRef::Nested(n) = f.value

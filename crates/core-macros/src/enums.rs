@@ -291,6 +291,7 @@ fn emit_enum(
         &doc_tok,
         codec_kind,
         codec_meta,
+        &quote!(::core_lib::Case::Camel),
         &quote!(::core_lib::SyncKind::Embedded),
         &[],
         variants,

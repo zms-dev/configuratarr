@@ -91,3 +91,69 @@ fn camelcase_skips_and_secret() {
         })
     );
 }
+
+/// `case = snake` — the wire key is the field name verbatim (for APIs whose JSON
+/// is snake_case, e.g. bazarr), not camelCased.
+#[resource(sync = singleton, case = snake, read = get("/s"), update = put("/s"))]
+pub struct SnakeCfg {
+    pub use_sonarr: bool,
+    pub minimum_score: i32,
+}
+
+#[test]
+fn snake_case_keeps_field_names_verbatim() {
+    let c = SnakeCfg {
+        use_sonarr: true,
+        minimum_score: 90,
+    };
+    let v = engine::encode(&c).unwrap();
+    assert_eq!(
+        v,
+        serde_json::json!({ "use_sonarr": true, "minimum_score": 90 })
+    );
+}
+
+/// `#[wire(null)]` keeps a `None` optional as an explicit null; `#[wire(int)]`
+/// renders a bool as `0`/`1`. Both compose (bazarr's `originalFormat`).
+#[resource(sync = singleton, read = get("/w"), update = put("/w"))]
+pub struct WireOpts {
+    #[wire(null)]
+    pub note: Option<String>,
+    #[wire(int)]
+    pub flag: bool,
+    #[wire(null, int)]
+    pub tri: Option<bool>,
+}
+
+#[test]
+fn wire_null_and_int_encode() {
+    let none = WireOpts {
+        note: None,
+        flag: false,
+        tri: None,
+    };
+    assert_eq!(
+        engine::encode(&none).unwrap(),
+        serde_json::json!({ "note": null, "flag": 0, "tri": null })
+    );
+
+    let some = WireOpts {
+        note: Some("x".into()),
+        flag: true,
+        tri: Some(false),
+    };
+    assert_eq!(
+        engine::encode(&some).unwrap(),
+        serde_json::json!({ "note": "x", "flag": 1, "tri": 0 })
+    );
+}
+
+#[test]
+fn wire_int_decodes_back_to_bool() {
+    // The wire carries `0`/`1` ints for the bool fields; decode maps them back.
+    let wire = serde_json::json!({ "note": null, "flag": 1, "tri": 0 });
+    let d: WireOpts = engine::decode(&wire).unwrap();
+    assert_eq!(d.note, None);
+    assert!(d.flag);
+    assert_eq!(d.tri, Some(false));
+}

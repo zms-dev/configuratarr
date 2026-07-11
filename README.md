@@ -17,11 +17,15 @@ Reads a desired-state YAML file, diffs it against each app's live REST API, and 
 |-----|-----|---------------|--------|
 | Radarr | v3 | `radarr-v3` | ✅ Supported |
 | Sonarr | v3 | `sonarr-v3` | ✅ Supported |
-| Lidarr | v1 | `lidarr-v1` | 🚧 Planned |
+| Lidarr | v1 | `lidarr-v1` | ✅ Supported |
 | Prowlarr | v1 | `prowlarr-v1` | ✅ Supported |
+| Jellyfin | v10.11 | `jellyfin-v11` | ✅ Supported |
+| Bazarr | v1 | `bazarr-v1` | ✅ Supported |
+| Autobrr | v1 | `autobrr-v1` | ✅ Supported |
+| LazyLibrarian | v1 | `lazylibrarian-v1` | ✅ Supported |
 | Readarr | — | — | 🚧 Planned |
 
-More of the ecosystem (Jellyfin, Bazarr, Jellyseerr, …) is on the radar. The engine is service-agnostic — adding one is filling in a template, not changing the core. See [`docs/contributors.md`](docs/contributors.md).
+More of the ecosystem (Jellyseerr, …) is on the radar. The engine is service-agnostic — adding one is filling in a template, not changing the core. See [`docs/contributors.md`](docs/contributors.md).
 
 ---
 

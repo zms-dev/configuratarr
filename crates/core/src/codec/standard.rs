@@ -2,13 +2,15 @@
 //!
 //! snake_case Rust field name → camelCase wire key by default; `wire_name`
 //! overrides it. Read-only fields (`#[id]`, `#[wire(read_only)]`) are skipped on
-//! encode. `Option::None` is omitted. Secrets are exposed to their plaintext
-//! string at this boundary. Nested resources recurse via the erased view.
+//! encode. `Option::None` is omitted (unless `#[wire(null)]`, which emits an
+//! explicit null); `#[wire(int)]` renders a bool as `0`/`1`. Secrets are exposed
+//! to their plaintext string at this boundary. Nested resources recurse via the
+//! erased view.
 
 use serde_json::{Map, Number, Value};
 
 use crate::described::Described;
-use crate::descriptor::FieldDescriptor;
+use crate::descriptor::{Case, FieldDescriptor};
 use crate::field::FieldRef;
 
 /// Encode a resource to its wire JSON object.
@@ -16,7 +18,7 @@ pub fn encode<T: Described>(value: &T) -> anyhow::Result<Value> {
     let desc = T::descriptor();
     let mut map = Map::new();
     for f in desc.fields {
-        emit_field(&mut map, f, (f.get)(value))?;
+        emit_field(&mut map, f, (f.get)(value), desc.case)?;
     }
     Ok(Value::Object(map))
 }
@@ -28,6 +30,7 @@ fn emit_field<T: 'static>(
     map: &mut Map<String, Value>,
     f: &FieldDescriptor<T>,
     r: FieldRef<'_>,
+    case: Case,
 ) -> anyhow::Result<()> {
     if f.read_only {
         return Ok(());
@@ -43,7 +46,7 @@ fn emit_field<T: 'static>(
             },
             _ => anyhow::bail!("#[fields_map] requires a Json field on `{}`", f.name),
         };
-        map.insert(wire_key(f.name, f.wire_name), Value::Array(arr));
+        map.insert(wire_key(f.name, f.wire_name, case), Value::Array(arr));
         return Ok(());
     }
     if f.flatten
@@ -62,15 +65,33 @@ fn emit_field<T: 'static>(
             for n in it {
                 arr.push(n.encode_self()?);
             }
-            map.insert(wire_key(f.name, f.wire_name), Value::Array(arr));
+            map.insert(wire_key(f.name, f.wire_name, case), Value::Array(arr));
         }
-        other => {
-            if let Some(v) = field_to_json(&other)? {
-                map.insert(wire_key(f.name, f.wire_name), v);
+        other => match field_to_json(&other)? {
+            Some(v) => {
+                map.insert(
+                    wire_key(f.name, f.wire_name, case),
+                    coerce_wire(v, f.as_int),
+                );
             }
-        }
+            // `#[wire(null)]`: keep the key as an explicit null instead of
+            // dropping it (a `None` optional the API wants present).
+            None if f.emit_none => {
+                map.insert(wire_key(f.name, f.wire_name, case), Value::Null);
+            }
+            None => {}
+        },
     }
     Ok(())
+}
+
+/// Apply `#[wire(int)]`: a bool renders as the integer `0`/`1`. Anything else is
+/// unchanged.
+fn coerce_wire(v: Value, as_int: bool) -> Value {
+    match (as_int, &v) {
+        (true, Value::Bool(b)) => Value::Number(i64::from(*b).into()),
+        _ => v,
+    }
 }
 
 /// Convert one borrowed field value to JSON. `Ok(None)` means "omit this key"
@@ -158,11 +179,18 @@ fn num_f64(x: f64) -> anyhow::Result<Value> {
         .ok_or_else(|| anyhow::anyhow!("non-finite float cannot be encoded as JSON: {x}"))
 }
 
-/// Wire key: explicit `wire_name` override, else snake_case → camelCase.
-pub(crate) fn wire_key(name: &str, wire_name: Option<&str>) -> String {
+/// Wire key: explicit `wire_name` override, else the field name cased per the
+/// resource's [`Case`] — camelCase (default), PascalCase (.NET-style APIs), or
+/// Snake (identity — the field name is already the wire key).
+pub(crate) fn wire_key(name: &str, wire_name: Option<&str>, case: Case) -> String {
     match wire_name {
         Some(w) => w.to_string(),
-        None => to_camel_case(name),
+        None => match case {
+            Case::Camel => to_camel_case(name),
+            Case::Pascal => to_pascal_case(name),
+            // Identity: the wire key is the snake field name (bazarr).
+            Case::Snake => name.to_string(),
+        },
     }
 }
 
@@ -182,6 +210,17 @@ fn to_camel_case(s: &str) -> String {
     out
 }
 
+/// PascalCase = camelCase with the first character upper-cased. Single casing
+/// base, so both spellings stay in sync.
+fn to_pascal_case(s: &str) -> String {
+    let camel = to_camel_case(s);
+    let mut chars = camel.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+        None => camel,
+    }
+}
+
 /// Decode a resource from its wire JSON object.
 ///
 /// Builds an empty instance, then populates each present (non-null) field via
@@ -195,6 +234,7 @@ pub fn decode<T: Described>(value: &Value) -> anyhow::Result<T> {
 
     let mut out = T::empty();
     let desc = T::descriptor();
+    let case = desc.case;
     for f in desc.fields {
         // A flattened nested struct reads its fields from the parent object.
         if f.flatten {
@@ -204,7 +244,7 @@ pub fn decode<T: Described>(value: &Value) -> anyhow::Result<T> {
         }
         // `#[fields_map]`: collect the `[{name, value}]` blob into a map.
         if f.fields_map {
-            let key = wire_key(f.name, f.wire_name);
+            let key = wire_key(f.name, f.wire_name, case);
             let map = obj
                 .get(&key)
                 .and_then(Value::as_array)
@@ -214,11 +254,20 @@ pub fn decode<T: Described>(value: &Value) -> anyhow::Result<T> {
                 .map_err(|e| anyhow::anyhow!("field `{}`: {e}", f.name))?;
             continue;
         }
-        let key = wire_key(f.name, f.wire_name);
+        let key = wire_key(f.name, f.wire_name, case);
         let Some(jv) = obj.get(&key) else { continue };
         if jv.is_null() {
             continue;
         }
+        // `#[wire(int)]`: the wire carries `0`/`1` for a bool field — map it back
+        // before the kind-driven conversion (which expects a JSON bool).
+        let int_bool;
+        let jv = if f.as_int && jv.is_number() {
+            int_bool = Value::Bool(jv.as_i64().is_some_and(|n| n != 0));
+            &int_bool
+        } else {
+            jv
+        };
         let fv = json_to_field_value(f.kind, f.secret, jv)
             .map_err(|e| anyhow::anyhow!("field `{}`: {e}", f.name))?;
         (f.set)(&mut out, fv).map_err(|e| anyhow::anyhow!("field `{}`: {e}", f.name))?;

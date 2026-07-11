@@ -103,14 +103,6 @@ pub struct CrudRes {
     pub name: String,
 }
 
-#[resource(sync = bulk_replace)]
-pub struct BulkReplaceRes {
-    #[id]
-    pub id: Option<i32>,
-    #[key]
-    pub name: String,
-}
-
 #[resource(sync = singleton)]
 pub struct SingletonRes {
     pub id: Option<i32>,
@@ -128,14 +120,6 @@ pub struct CrudStrRes {
 #[test]
 fn sync_kind_crud() {
     assert!(matches!(CrudRes::descriptor().sync, SyncKind::Crud));
-}
-
-#[test]
-fn sync_kind_bulk_replace() {
-    assert!(matches!(
-        BulkReplaceRes::descriptor().sync,
-        SyncKind::BulkReplace
-    ));
 }
 
 #[test]

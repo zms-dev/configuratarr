@@ -29,6 +29,11 @@ in
         "radarr.service"
         "sonarr.service"
         "prowlarr.service"
+        "lidarr.service"
+        "jellyfin.service"
+        "bazarr.service"
+        "autobrr.service"
+        "lazylibrarian.service"
       ];
 
       serviceConfig = {
@@ -37,6 +42,11 @@ in
           [
             "${cfg.package}/bin/configuratarr"
             "--config ${configFile}"
+          ]
+          # Global flags precede the subcommand.
+          ++ lib.optional cfg.waitForHealthy "--wait-for-healthy"
+          ++ lib.optional cfg.waitForHealthy "--wait-timeout ${toString cfg.waitTimeout}"
+          ++ [
             "apply"
             # Non-interactive: systemd has no TTY for the confirmation prompt.
             "--auto-approve"

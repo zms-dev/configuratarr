@@ -137,12 +137,16 @@ The static spec types `fields` as a generic `[{name, value}]` array — it tells
 | FK to another resource by name | `#[reference(<type>)]` on `i32` / `Option<i32>` / `Vec<i32>` |
 | Wire name ≠ snake→camel | `#[wire(name = "...")]` |
 | Present on read, never sent | `#[wire(read_only)]` |
+| Emit a `None` optional as explicit `null` (not omitted) | `#[wire(null)]` |
+| Encode a `bool` as the int `0`/`1` (and decode back) | `#[wire(int)]` |
 | Nested struct hoisted to parent keys | `#[flatten]` |
 | Non-zero default for an absent config key | `#[default(expr)]` |
 | Open `name: value` settings map ↔ *arr `fields:[{name,value}]` blob | `#[fields_map]` on a `Json` field |
 | Credential | field type `SecretValue` (no attribute — inferred) |
 
 `#[fields_map]` is for an **open / dynamically-keyed** provider blob whose settings can't be a fixed struct (e.g. Prowlarr indexers — Cardigann definitions vary per tracker). The user authors a plain YAML map (`fields: { baseUrl: ..., apiKey: ... }`); the standard wire codec splays it to `fields:[{name,value}]` on encode and collects it back on decode. `${env}`/`${ref}` resolve inside the values; the whole map redacts as `Complex` in plan output. Used by `raw_provider.rs` (`RawProvider`). For a **closed** variant set, use typed `#[fields_blob]` variants instead — only reach for `#[fields_map]` when the key set is genuinely open.
+
+`#[wire(null)]` and `#[wire(int)]` (standard codec only) exist so a hand-rolled `sync = custom` translator doesn't have to. Reach for them when the API's read shape needs a `None` optional present as an explicit `null` (so a whole-object diff stays structural) or stores a boolean as an int — e.g. bazarr's `LanguageProfile` (`#[wire(null, int)]` on `original_format`) and `Notifier` (`#[wire(null)]` on `url`). They compose (`#[wire(null, int)]`), so a custom reconcile can just `engine::encode(&decode_config::<T>(v)?)` instead of poking `serde_json::Value` field-by-field. Mixed casing within one document is handled by giving a nested child struct its own `case = ...` — not a field attribute.
 
 Endpoints are **always explicit** (`verb("/path")`); paths may carry `${self.<field>}` (resolved against the live/merged value at apply, e.g. `/api/v3/tag/${self.id}`).
 

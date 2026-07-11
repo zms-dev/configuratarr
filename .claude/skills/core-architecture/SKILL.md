@@ -21,9 +21,9 @@ Consequences: no `Interpolated<T>` wrapper, no `CollectRefs`/`Referenceable`/`Se
 ## `core/src` map
 
 ```
-descriptor.rs   ResourceDescriptor, Endpoint(s), HttpMethod, SyncKind, CodecMeta, DefaultLit,
-                FieldDescriptor (name/doc/role/kind/wire_name/read_only/default/secret/flatten/
-                fields_map/reference/nested_docs/get/set), VariantDescriptor
+descriptor.rs   ResourceDescriptor, Case (camel|pascal), Endpoint(s), HttpMethod, SyncKind,
+                CodecMeta, DefaultLit, FieldDescriptor (name/doc/role/kind/wire_name/read_only/
+                default/secret/flatten/fields_map/reference/nested_docs/get/set), VariantDescriptor
 described.rs     Described trait (descriptor/empty/encode_variant/decode_variant/...);
                  ResourceErased + ErasedField (the type-erased walk used by nested recursion + doc-gen)
 field.rs         FieldKind / FieldRef / FieldValue / FieldRole
@@ -31,7 +31,15 @@ codec/           standard, fields_blob, tagged_by_impl, string_enum, config; Cod
 engine.rs        encode/decode/decode_config dispatch; key_wire_name, reference_targets,
                  secret_wire_keys, field_docs/resource_docs (doc-gen)
 resolve.rs       ${env}/${file}/${ref}/${self} on the Value tree (one `substitute` primitive)
-resolver.rs      StaticEnv / RefSource traits + SystemEnv
+resolver.rs      StaticEnv / RefSource traits + SystemEnv; RefId (Int(i64)|Str|Pending) — the
+                 bounded ref id; Pending = a not-yet-created id (preview / id-less create response),
+                 substitutes as RefId::PENDING (-1)
+apply.rs         (…executor…) + CustomSync trait / CustomSyncFn — the `sync = custom` hook seam
+reconcile.rs     reconcile primitives for custom hooks: present_keys, create_only (keyed
+                 create-or-leave), upsert (keyed create-or-update, no prune, caller-supplied
+                 in_sync predicate), replace (whole-list structural replace), echo (copy a
+                 server-owned field back into an update body) — each write primitive owns the
+                 execute-gate + Change emission so a hook can't write during a preview
 merge.rs         sparse-update merge (live ⊕ desired; fields[] by name)
 plan.rs          Plan/PlanStep/Op/FieldChange/Report + DisplayValue + render()
 apply.rs         plan()/apply()/run() executor; topo order; RefStore; connect/auth
@@ -44,14 +52,21 @@ service.rs       Service trait, ServiceDescriptor, ServiceField, Connection, Aut
 |---|---|---|---|
 | **endpoints** | `list/read/create/update/delete = verb("/path")` | `Endpoints` | pure data: verb + path (`${self.*}`-capable) |
 | **codec** | which macro you use | `CodecKind` | wire shape |
-| **sync** | `sync = crud\|singleton\|bulk_replace\|custom` | `SyncKind` | write strategy; the executor dispatches on this, **not** struct shape |
+| **sync** | `sync = crud\|singleton\|custom` | `SyncKind` | write strategy; the executor dispatches on this, **not** struct shape (`Custom` carries its hook) |
 | **auth** | `auth = ...` on `#[service]` | `Auth` | None / ApiKey / Bearer / Basic / FormCookie |
 
 Extension model: **select** (name an impl) → **register** (add an enum variant + dispatch arm) → **custom** (`<axis> = custom` → a hand-written hook in the contributor's crate). Dispatch is static enum + `match` (compile-time exhaustive; the central edit is the review gate).
 
 ## Codecs
 
-- **Standard** — snake→camelCase JSON object.
+- **Standard** — snake→camelCase JSON object by default; a resource may set `case = pascal`
+  (`ResourceDescriptor.case`, applied in `wire_key`) for .NET-style PascalCase APIs (Jellyfin). Casing is
+  descriptor *data*, not macro behaviour — one implementation (`to_camel_case`; pascal = +upcase first).
+  Two field-level wire options (also descriptor data, standard codec only): `#[wire(null)]` emits a `None`
+  optional as an explicit JSON `null` instead of omitting the key (`FieldDescriptor.emit_none`);
+  `#[wire(int)]` renders a `bool` as the int `0`/`1` and decodes it back (`FieldDescriptor.as_int`). They
+  compose — added so a `sync = custom` reconcile can `engine::encode` instead of hand-rolling `Value`
+  translation (bazarr `LanguageProfile`/`Notifier`).
 - **FieldsBlob** — `{implementation, configContract, fields:[{name,value}]}`; each typed field → one entry. For an **open** key set (no fixed struct — e.g. Prowlarr Cardigann indexers), a `#[fields_map]` `Json` field on a Standard struct (`RawProvider`) carries a `name: value` map that the standard wire codec splays to / collects from the same `fields:[{name,value}]` array.
 - **TaggedByImpl** — reads a discriminator key, delegates to the matching variant's codec.
 - **StringEnum** — unit enum ↔ bare wire string.
@@ -83,6 +98,20 @@ PUT body = `merge(live, desired)`: live base, desired wins, omitted keys keep li
 
 `engine::resource_docs::<T>()` walks `T::empty().descriptor_erased()`, descends `#[flatten]`, drops read-only/id, and surfaces: flat fields, provider blocks (from flattened tagged enums via `VariantDescriptor.field_docs`), nested types (via `FieldDescriptor.nested_docs` fn-pointers — reachable even when the value is absent), and `#[wire_enum]` allowed values. `config-doc-gen` BFSs that graph into a fully cross-linked markdown doc. No global type registry — the macro emits the fn-pointers.
 
-## Known seams (build when a service demands)
+## Seams
 
-Async `AuthScheme`/`Authenticator` traits (Basic/FormCookie/OAuth2 bail today); string ids (i32 → string-or-number for Jellyfin GUIDs); `SyncKind::BulkReplace`/`Custom`; fanned update (`update: Option<Endpoint>` → slice); pagination; normalization-before-diff.
+**Built (extend, don't reinvent):**
+- **String/GUID ids** — the ref id is [`resolver::RefId`] (`Int(i64)|Str|Pending`); `RefStore`/`RefSource` are keyed by it, resolve substitutes `RefId::to_value()`. *arr stay `Int`. `Pending` is the not-yet-created id (a `plan` preview, or a create whose response carried no id) — it substitutes as `RefId::PENDING` (`-1`); use it, never a bare `-1`.
+- **`SyncKind::Custom(CustomSyncFn)`** — the hook is carried by the variant (no separate descriptor field); `apply::custom_step` dispatches to a hand-written async reconcile hook for APIs that don't fit crud/singleton (multi-endpoint, query-keyed identity, server-gen ids). The hook returns `Vec<Change>` (Created/Updated/Unchanged + safe display rows) and the engine builds the report `Op`s — so hooks never touch the plan model or leak a raw body, **but** the hook owns its own HTTP/ordering/idempotency and must honour `execute`. **Don't hand-roll the recurring mechanics** — the `core::reconcile` primitives (`present_keys`, `create_only` = keyed create-or-leave, `upsert` = keyed create-or-update with a caller-supplied `in_sync` predicate + no prune, `replace` = whole-list structural replace) own the execute-gate + `Change` emission so a hook can't accidentally write during a preview; a hook supplies only its service-specific diff/write. `upsert` is the home for a collection that doesn't round-trip its writes (server-rewritten ids, redacted secrets, enriched sub-arrays) — where merge-equality would churn forever, so idempotency is the caller's predicate (autobrr `subset`, indexer `readable_matches`) and an update echoes server-owned fields back with `reconcile::echo`. Encode config→wire once via `engine::encode_config::<Self>`. Only genuinely bespoke flows (multi-endpoint per item like jellyfin `user`, the two-step create + action-reconcile of autobrr `filter`, sparse form singletons like bazarr `settings`) keep an explicit `if execute` — and even those live in the *service* crate, not core.
+- **PascalCase codec** — `case = pascal` (see Codecs).
+- **Form/cookie auth** — `auth = form_cookie(login_path=…, username=…, password=…)`. `apply::connect` builds a cookie-store client, POSTs `username`/`password` as a form to `login_path`, and the session cookie rides every request. (Bearer/api-key/basic remain header schemes; OAuth2 still open.)
+- **Query-param writes** — `HttpClient::post_query(path, &[(k,v)], body)` for APIs that carry a resource's identity/params in the query string, not the JSON body (Jellyfin libraries by `name`/`paths`, api keys by `app`). reqwest percent-encodes each pair (repeated names survive) — a hook never hand-builds an escaped query string. (`post` JSON body, `post_form` urlencoded body are the other write shapes.)
+
+**Still open (build when a service demands):** async `AuthScheme`/`Authenticator` traits (OAuth2 bails today; `Basic` is a header, `FormCookie` is wired); fanned update (`update: Option<Endpoint>` → slice); pagination; normalization-before-diff.
+
+## Non-*arr service shapes (deliberate divergences)
+
+Two patterns that look like slop but are intentional — mirror the reasoning, don't "fix" them:
+
+- **One endpoint, many sections (bazarr).** A service whose entire config is a single endpoint (`/api/system/settings`) is modelled as a `sync = custom` singleton whose fields are `Option<Section>` (present = manage, absent = leave). Sibling concerns that write the *same* endpoint (bazarr `languages`) can be a second custom resource — the shared write is fine, they don't `#[reference]` each other. The "resource = a REST collection with CRUD identity" model is a polite fiction here; that's expected for config-blob APIs.
+- **Typed sections vs open blob — the closed/open rule.** Enumerate typed structs (bazarr's 33 provider sections) when the key set is **closed and worth documenting** — you get per-field docs + validation, at the cost of one file per section. Use an open `#[fields_map]` `Json` blob (prowlarr Cardigann `RawProvider`) when the key set is **open/dynamic** and can't be enumerated. Pick by the API's nature, not by file count.

@@ -40,6 +40,7 @@ let
       prowlarr
       lidarr
       readarr
+      jellyfin
     ];
     shellHook = ''
       echo "=== Configuratarr E2E DevShell ==="
@@ -60,6 +61,31 @@ in
   };
 
   e2e-prowlarr = import ./e2e-shells/prowlarr-v1.nix {
+    inherit pkgs;
+    e2eShell = e2e;
+  };
+
+  e2e-lidarr = import ./e2e-shells/lidarr-v1.nix {
+    inherit pkgs;
+    e2eShell = e2e;
+  };
+
+  e2e-jellyfin = import ./e2e-shells/jellyfin-v11.nix {
+    inherit pkgs;
+    e2eShell = e2e;
+  };
+
+  e2e-bazarr = import ./e2e-shells/bazarr-v1.nix {
+    inherit pkgs;
+    e2eShell = e2e;
+  };
+
+  e2e-autobrr = import ./e2e-shells/autobrr-v1.nix {
+    inherit pkgs;
+    e2eShell = e2e;
+  };
+
+  e2e-lazylibrarian = import ./e2e-shells/lazylibrarian-v1.nix {
     inherit pkgs;
     e2eShell = e2e;
   };

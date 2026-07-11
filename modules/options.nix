@@ -40,4 +40,16 @@
     default = false;
     description = "Pass `--prune` to delete server-side resources absent from the config.";
   };
+
+  waitForHealthy = lib.mkOption {
+    type = lib.types.bool;
+    default = false;
+    description = "Pass `--wait-for-healthy` to poll each service's health endpoint before syncing.";
+  };
+
+  waitTimeout = lib.mkOption {
+    type = lib.types.ints.unsigned;
+    default = 120;
+    description = "Max seconds to wait per service when `waitForHealthy` is enabled.";
+  };
 }

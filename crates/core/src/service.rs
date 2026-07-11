@@ -40,8 +40,8 @@ pub struct ServiceField<S: 'static> {
     /// The resource's snake-case type name (`${ref}` target, dep-graph node).
     pub type_name: &'static str,
 
-    /// The resource's declared sync strategy. The executor dispatches on this,
-    /// *not* on the field's `Vec`/`Option` shape.
+    /// The resource's declared sync strategy (a `Custom` carries its hook). The
+    /// executor dispatches on this, *not* on the field's `Vec`/`Option` shape.
     pub sync: fn() -> crate::SyncKind,
 
     /// Type-erased iterator over the resource(s) — each `Vec<R>` element, or
@@ -49,7 +49,7 @@ pub struct ServiceField<S: 'static> {
     pub iter: for<'a> fn(&'a S) -> Box<dyn Iterator<Item = &'a dyn ResourceErased> + 'a>,
 
     /// The types this resource references (`#[reference(t)]`), read statically so
-    /// apply ordering works even for empty collections (refs are plain `i32`).
+    /// apply ordering works even for empty collections.
     pub ref_targets: fn() -> Vec<&'static str>,
 
     /// The resource's HTTP operations.
@@ -100,6 +100,15 @@ pub enum Auth<'a> {
         key: &'a SecretValue,
     },
 
+    /// API key carried as a URL query parameter on every request (e.g.
+    /// LazyLibrarian's `?apikey=`). [`connect`](crate::apply::connect) registers
+    /// it as a default query pair on the client so it rides every request,
+    /// including the authenticated health check.
+    ApiKeyQuery {
+        param: &'static str,
+        key: &'a SecretValue,
+    },
+
     /// Bearer token in the `Authorization` header.
     Bearer {
         token: &'a SecretValue,
@@ -111,9 +120,9 @@ pub enum Auth<'a> {
         pass: &'a SecretValue,
     },
 
-    /// Form/cookie auth: POST credentials to `login_path`, reuse the session
-    /// cookie. The handshake lands with the future `AuthScheme` trait; the
-    /// variant exists so the data shape already covers it.
+    /// Form/cookie auth: [`connect`](crate::apply::connect) POSTs the
+    /// credentials as an `username`/`password` form to `login_path`, and the
+    /// client's cookie store reuses the returned session for every request.
     FormCookie {
         login_path: &'static str,
         user: &'a String,

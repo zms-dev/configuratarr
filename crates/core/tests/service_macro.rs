@@ -89,10 +89,10 @@ fn descriptor_field_kinds() {
     // Vec<ColResource>: type_name is snake_case("ColResource"); the dispatch
     // strategy is the resource's own declared `sync` (crud), not the Vec shape.
     assert_eq!(d.fields[0].type_name, "col_resource");
-    assert_eq!((d.fields[0].sync)(), SyncKind::Crud);
+    assert!(matches!((d.fields[0].sync)(), SyncKind::Crud));
     // Option<SingResource> → snake_case("SingResource"), sync = singleton.
     assert_eq!(d.fields[1].type_name, "sing_resource");
-    assert_eq!((d.fields[1].sync)(), SyncKind::Singleton);
+    assert!(matches!((d.fields[1].sync)(), SyncKind::Singleton));
 }
 
 #[test]
@@ -252,6 +252,35 @@ fn connection_auth_none() {
     };
     let conn = svc.connection();
     assert!(matches!(conn.auth, Auth::None));
+}
+
+// ── auth = api_key(query = …) ─────────────────────────────────────────────────
+
+#[service(
+    name = "query_key_service",
+    health = "/api?cmd=getVersion",
+    auth = api_key(query = "apikey"),
+)]
+pub struct QueryKeyService {
+    pub url: String,
+    #[credential(api_key)]
+    pub api_key: SecretValue,
+}
+
+#[test]
+fn connection_api_key_query_auth() {
+    let svc = QueryKeyService {
+        url: "http://localhost:5299".to_string(),
+        api_key: SecretValue::new("deadbeef".to_string()),
+    };
+    let conn = svc.connection();
+    match conn.auth {
+        Auth::ApiKeyQuery { param, key } => {
+            assert_eq!(param, "apikey");
+            assert_eq!(key.expose(), "deadbeef");
+        }
+        _ => panic!("expected Auth::ApiKeyQuery"),
+    }
 }
 
 // ── auth = form_cookie ────────────────────────────────────────────────────────

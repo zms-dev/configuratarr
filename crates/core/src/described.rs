@@ -74,6 +74,9 @@ pub trait ResourceErased {
 pub struct ResourceDescriptorErased<'a> {
     pub type_name: &'static str,
     pub codec: crate::codec::CodecKind,
+    /// Default wire-key casing (camel|pascal), for engine walks that compute
+    /// wire keys off the erased view (secret keys, natural key).
+    pub case: crate::descriptor::Case,
     /// The tagged-enum discriminator key, if this is a `TaggedByImpl` resource.
     pub discriminator: Option<&'static str>,
     /// Enum variants (empty for structs).
@@ -126,6 +129,7 @@ impl<T: Described> ResourceErased for T {
         ResourceDescriptorErased {
             type_name: desc.type_name,
             codec: desc.codec,
+            case: desc.case,
             discriminator,
             variants: desc.variants,
             fields: ErasedFields {

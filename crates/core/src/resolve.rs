@@ -43,7 +43,9 @@ pub fn resolve_refs(value: &mut Value, refs: &dyn RefSource) -> anyhow::Result<(
             let id = refs
                 .lookup(ty, key)
                 .ok_or_else(|| anyhow::anyhow!("unresolved reference `${{ref.{arg}}}`"))?;
-            Ok(Some(Value::Number(id.into())))
+            // Substitute the id as its native JSON value (Number for *arr, String
+            // for GUID APIs) so the FK keeps its wire type.
+            Ok(Some(id.to_value()))
         }
         _ => Ok(None),
     })

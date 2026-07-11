@@ -7,12 +7,15 @@
 //! `apply` re-runs the walk rather than replaying a stale [`Plan`].
 //!
 //! Apply order is computed from **static** `#[reference(t)]` metadata
-//! ([`crate::ServiceField::ref_targets`]) — not from values, because by the time
-//! a resource is typed its refs are plain `i32`. A resource type is applied only
-//! after every type it references, so the server ids those refs resolve to exist.
+//! ([`crate::ServiceField::ref_targets`]) — not from values. A resource type is
+//! applied only after every type it references, so the server [`RefId`]s those refs
+//! resolve to already exist.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::time::{Duration, Instant};
+
+use std::future::Future;
+use std::pin::Pin;
 
 use anyhow::Context;
 use core_http::HttpClient;
@@ -20,10 +23,94 @@ use secrecy::SecretString;
 use serde_json::Value;
 
 use crate::plan::{self, Op, Plan, PlanStep};
+use crate::resolver::RefId;
 use crate::service::{Auth, Connection, Service, ServiceField};
-use crate::{HttpMethod, SyncKind};
+use crate::{Endpoint, HttpMethod, SyncKind};
 
 pub use crate::plan::Report;
+
+/// What a [`CustomSync`] hook did to one desired item — the engine turns this
+/// into the [`Op`] for the report, so hooks never touch the plan model.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ChangeKind {
+    Created,
+    Updated,
+    Unchanged,
+}
+
+/// One reconcile outcome reported by a [`CustomSync`] hook. `detail` is a small
+/// set of already-safe display rows for the plan view (label → value); the hook
+/// chooses what to surface and **must not put secrets here** — but unlike a raw
+/// wire body there's nothing to accidentally dump, only what the hook lists.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Change {
+    pub key: String,
+    pub kind: ChangeKind,
+    pub detail: Vec<(String, String)>,
+}
+
+impl Change {
+    /// A created item with no extra detail rows.
+    pub fn created(key: impl Into<String>) -> Self {
+        Self {
+            key: key.into(),
+            kind: ChangeKind::Created,
+            detail: Vec::new(),
+        }
+    }
+    /// An updated item with no extra detail rows.
+    pub fn updated(key: impl Into<String>) -> Self {
+        Self {
+            key: key.into(),
+            kind: ChangeKind::Updated,
+            detail: Vec::new(),
+        }
+    }
+    /// An unchanged item (no write).
+    pub fn unchanged(key: impl Into<String>) -> Self {
+        Self {
+            key: key.into(),
+            kind: ChangeKind::Unchanged,
+            detail: Vec::new(),
+        }
+    }
+    /// Attach a display row (label → value). Never pass a secret.
+    pub fn with(mut self, label: impl Into<String>, value: impl Into<String>) -> Self {
+        self.detail.push((label.into(), value.into()));
+        self
+    }
+}
+
+/// Future returned by a [`CustomSync::reconcile`] hook.
+pub type CustomSyncFuture<'a> =
+    Pin<Box<dyn Future<Output = anyhow::Result<Vec<Change>>> + Send + 'a>>;
+
+/// Type-erased pointer to a [`CustomSync::reconcile`], carried by
+/// [`SyncKind::Custom`] and dispatched by the executor.
+pub type CustomSyncFn =
+    for<'a> fn(&'a HttpClient, &'a [Value], &'a mut RefStore, bool) -> CustomSyncFuture<'a>;
+
+/// A hand-written reconcile hook for a `sync = custom` resource — the escape
+/// hatch for APIs that don't fit crud/singleton (multi-endpoint writes,
+/// query-keyed identity, server-generated ids: Jellyfin users, libraries, api
+/// keys). It is the one place the engine's guarantees don't hold: **the hook
+/// owns its own HTTP, ordering, and idempotency**, and must honour `execute`
+/// itself (`false` = plan/preview → perform no writes).
+///
+/// The engine hands it: the live `client`; the resolved `desired` configs
+/// (`${ref}` substituted, still snake_case config form — encode via `Self` with
+/// [`crate::engine`]); the `refs` store (register created ids so downstream
+/// `${ref}` resolve); and `execute`. It returns one [`Change`] per item; the
+/// engine builds the report [`Op`]s from those, so hooks stay clear of the plan
+/// model and can't leak a raw body.
+pub trait CustomSync {
+    fn reconcile<'a>(
+        client: &'a HttpClient,
+        desired: &'a [Value],
+        refs: &'a mut RefStore,
+        execute: bool,
+    ) -> CustomSyncFuture<'a>;
+}
 
 /// Resource type names of `S` in apply order: every referenced type precedes the
 /// types that reference it. Errors on a reference cycle. Static — needs no
@@ -105,26 +192,30 @@ pub struct ApplyOptions {
 /// create responses.
 #[derive(Debug, Default)]
 pub struct RefStore {
-    ids: HashMap<(String, String), i32>,
+    /// (type, key) → the server-assigned [`RefId`] (int for *arr, string for GUID
+    /// APIs).
+    ids: HashMap<(String, String), RefId>,
 }
 
 impl RefStore {
-    pub fn insert(&mut self, type_name: &str, key: &str, id: i32) {
+    pub fn insert(&mut self, type_name: &str, key: &str, id: RefId) {
         self.ids
             .insert((type_name.to_string(), key.to_string()), id);
     }
 }
 
 impl crate::resolver::RefSource for RefStore {
-    fn lookup(&self, type_name: &str, key: &str) -> Option<i32> {
+    fn lookup(&self, type_name: &str, key: &str) -> Option<RefId> {
         self.ids
             .get(&(type_name.to_string(), key.to_string()))
-            .copied()
+            .cloned()
     }
 }
 
-/// Build an HTTP client from a service's connection bundle.
-pub fn connect(conn: &Connection<'_>) -> anyhow::Result<HttpClient> {
+/// Build an HTTP client from a service's connection bundle. Async because the
+/// form/cookie scheme performs a login round-trip before the client is usable;
+/// the header schemes just stamp a default header and return immediately.
+pub async fn connect(conn: &Connection<'_>) -> anyhow::Result<HttpClient> {
     let mut b = HttpClient::builder(conn.url.clone());
     if conn.insecure == Some(true) {
         b = b.insecure();
@@ -135,6 +226,7 @@ pub fn connect(conn: &Connection<'_>) -> anyhow::Result<HttpClient> {
     b = match &conn.auth {
         Auth::None => b,
         Auth::ApiKey { header, key } => b.header(header, SecretString::new(key.expose().into())),
+        Auth::ApiKeyQuery { param, key } => b.query(*param, SecretString::new(key.expose().into())),
         Auth::Bearer { token } => b.header(
             "Authorization",
             SecretString::new(format!("Bearer {}", token.expose()).into()),
@@ -151,11 +243,29 @@ pub fn connect(conn: &Connection<'_>) -> anyhow::Result<HttpClient> {
                 SecretString::new(format!("Basic {creds}").into()),
             )
         }
-        Auth::FormCookie { .. } => {
-            anyhow::bail!("form-cookie auth not yet supported by the executor")
-        }
+        // Form/cookie auth keeps a session cookie rather than a header; enable
+        // the cookie store now and log in below once the client exists.
+        Auth::FormCookie { .. } => b.cookies(),
     };
-    b.build()
+    let client = b.build()?;
+
+    // Establish the session before returning, so every later request carries the
+    // cookie. The credentials POST as the conventional `username`/`password` form
+    // fields; a non-2xx login surfaces here (like a bad api key would).
+    if let Auth::FormCookie {
+        login_path,
+        user,
+        pass,
+    } = &conn.auth
+    {
+        let pairs = vec![
+            ("username".to_string(), user.to_string()),
+            ("password".to_string(), pass.expose().to_string()),
+        ];
+        client.login_form(login_path, &pairs).await?;
+    }
+
+    Ok(client)
 }
 
 /// Poll the service's declared `health` endpoint until it responds OK, or
@@ -167,7 +277,7 @@ pub async fn wait_healthy<S: Service>(svc: &S, timeout: Duration) -> anyhow::Res
     let Some(path) = S::descriptor().health_check else {
         return Ok(());
     };
-    let client = connect(&svc.connection())?;
+    let client = connect(&svc.connection()).await?;
     let interval = Duration::from_secs(2);
     let deadline = Instant::now() + timeout;
     loop {
@@ -219,7 +329,7 @@ async fn run<S: Service>(
     opts: ApplyOptions,
     execute: bool,
 ) -> anyhow::Result<Plan> {
-    let client = connect(&svc.connection())?;
+    let client = connect(&svc.connection()).await?;
     let fields = S::descriptor().fields;
     let mut refs = RefStore::default();
     let mut steps = Vec::new();
@@ -237,12 +347,9 @@ async fn run<S: Service>(
             SyncKind::Singleton => {
                 singleton_step(&client, instance, field, &mut refs, execute).await?
             }
-            SyncKind::BulkReplace => {
-                anyhow::bail!("BulkReplace sync (`{tn}`) is not yet implemented in the executor")
+            SyncKind::Custom(hook) => {
+                custom_step(&client, instance, field, &mut refs, hook, execute).await?
             }
-            SyncKind::Custom => anyhow::bail!(
-                "Custom sync (`{tn}`) requires a hand-written hook — not yet wired into the executor"
-            ),
             SyncKind::Embedded => {
                 anyhow::bail!("embedded resource `{tn}` cannot be a top-level service field")
             }
@@ -279,21 +386,9 @@ async fn collection_step<S: Service>(
         .list
         .ok_or_else(|| anyhow::anyhow!("collection `{tn}` has no list endpoint"))?;
     let live: Vec<Value> = client.get(list_ep.path).await?;
-    for lv in &live {
-        if let (Some(k), Some(id)) = (
-            lv.get(&key).map(plan::key_str),
-            lv.get("id").and_then(Value::as_i64),
-        ) {
-            refs.insert(tn, &k, id as i32);
-        }
-    }
+    register_live_ids(refs, tn, &key, &live);
 
-    let mut desired: Vec<Value> = Vec::with_capacity(cfgs.len());
-    for cfg in &cfgs {
-        let mut resolved = cfg.clone();
-        crate::resolve::resolve_refs(&mut resolved, &*refs)?;
-        desired.push((field.config_to_wire)(&resolved)?);
-    }
+    let desired = resolve_all(&cfgs, refs, |r| (field.config_to_wire)(&r))?;
 
     let ops = plan::plan_collection(&live, &desired, &key, &eps, opts.prune)
         .with_context(|| format!("planning collection `{tn}`"))?;
@@ -303,6 +398,147 @@ async fn collection_step<S: Service>(
         ops,
         secret_keys: (field.secret_keys)(),
     }))
+}
+
+/// Resolve `${ref}` in each desired config entry, applying `xform` to the result
+/// (wire-encode for crud, identity for custom which encodes via its own type).
+/// Shared by the `Vec<R>` step functions; the caller does the absent-key
+/// (unmanaged) check first, since that must precede any API call.
+fn resolve_all(
+    cfgs: &[Value],
+    refs: &RefStore,
+    xform: impl Fn(Value) -> anyhow::Result<Value>,
+) -> anyhow::Result<Vec<Value>> {
+    cfgs.iter()
+        .map(|cfg| {
+            let mut resolved = cfg.clone();
+            crate::resolve::resolve_refs(&mut resolved, refs)?;
+            xform(resolved)
+        })
+        .collect()
+}
+
+/// Dispatch a `sync = custom` resource to its [`CustomSync`] `hook`. Resolves
+/// `${ref}` in each desired config (still snake_case form — the hook encodes via
+/// its own type), runs the hook, and turns the returned [`Change`]s into the
+/// report's [`Op`]s. `None` if the config key is absent (unmanaged).
+async fn custom_step<S: Service>(
+    client: &HttpClient,
+    instance: &Value,
+    field: &ServiceField<S>,
+    refs: &mut RefStore,
+    hook: CustomSyncFn,
+    execute: bool,
+) -> anyhow::Result<Option<PlanStep>> {
+    let tn = field.type_name;
+    // A custom resource is `Vec<R>` (array config) or `Option<R>` (a *custom
+    // singleton* — one object config). Normalise the singleton object to a
+    // one-element list so the hook always sees `&[Value]`; absent/null = unmanaged.
+    let cfgs: Vec<Value> = match instance.get(field.name) {
+        None | Some(Value::Null) => return Ok(None),
+        Some(Value::Array(a)) => a.clone(),
+        Some(obj) => vec![obj.clone()],
+    };
+
+    let desired = resolve_all(&cfgs, refs, Ok)?;
+    let changes = hook(client, &desired, refs, execute)
+        .await
+        .with_context(|| format!("custom sync `{tn}`"))?;
+
+    // Export this resource's server ids into the RefStore so later resources can
+    // `${ref.<tn>.<key>}` it — the same registration `collection_step` does, which
+    // is why crud resources are referenceable and custom ones weren't. Keyed
+    // custom collections (indexer, filter, irc) qualify; custom singletons (no
+    // `key_wire`) don't. Runs post-hook so freshly-created ids are included, and
+    // in both plan and apply (a read-only list GET), matching topological order.
+    register_refs(client, tn, field, refs).await;
+
+    let ops = changes.into_iter().map(change_to_op).collect();
+    Ok(Some(PlanStep {
+        type_name: tn,
+        ops,
+        secret_keys: Vec::new(),
+    }))
+}
+
+/// Register `(<key> -> server id)` into `refs` for each live item that has both,
+/// so `${ref.<tn>.<key>}` resolves. The shared core of both ref-registration
+/// paths ([`collection_step`] inline, [`register_refs`] after a custom hook).
+fn register_live_ids(refs: &mut RefStore, tn: &'static str, key: &str, live: &[Value]) {
+    for lv in live {
+        if let (Some(k), Some(id)) = (
+            lv.get(key).map(plan::key_str),
+            lv.get("id").and_then(RefId::from_value),
+        ) {
+            refs.insert(tn, &k, id);
+        }
+    }
+}
+
+/// Register refs from a raw list-endpoint response value: only a plain JSON array
+/// carries `[{id, <key>}]` items. A non-array (e.g. Jellyfin's `{Items:[…]}`
+/// wrapper) yields nothing — see [`register_refs`].
+fn register_list_refs(refs: &mut RefStore, tn: &'static str, key: &str, live: &Value) {
+    if let Some(arr) = live.as_array() {
+        register_live_ids(refs, tn, key, arr);
+    }
+}
+
+/// Register a keyed resource's server ids so `${ref.<type>.<key>}` resolves in
+/// later-applied resources. No-op when the resource has no natural key or list
+/// endpoint (custom singletons).
+///
+/// **Best-effort**, unlike the sync itself. It costs a second list GET (the
+/// custom hook already fetched its own copy but owns that HTTP, so the engine
+/// can't reuse it), and any failure is swallowed: a list that isn't a plain
+/// `[{id, <key>}]` array (Jellyfin's `{Items:[…]}`) or a list GET the API rejects
+/// simply yields no refs rather than failing the apply. A resource that genuinely
+/// *is* referenced but can't be listed flatly surfaces later as an unresolved
+/// ref — the clearer error.
+async fn register_refs<S: Service>(
+    client: &HttpClient,
+    tn: &'static str,
+    field: &ServiceField<S>,
+    refs: &mut RefStore,
+) {
+    let (Some(key), Some(list_ep)) = ((field.key_wire)(), (field.endpoints)().list) else {
+        return;
+    };
+    if let Ok(live) = client.get::<Value>(list_ep.path).await {
+        register_list_refs(refs, tn, &key, &live);
+    }
+}
+
+/// Build the display-only report [`Op`] for one custom [`Change`]. Custom ops are
+/// never executed (the hook already did its HTTP), so the endpoint/path are inert
+/// placeholders; the `detail` rows become the op body for the plan view.
+fn change_to_op(c: Change) -> Op {
+    // Inert — a custom op is only ever read by the report/renderer, never sent.
+    const INERT: Endpoint = Endpoint {
+        method: HttpMethod::Post,
+        path: "",
+    };
+    let body = Value::Object(
+        c.detail
+            .into_iter()
+            .map(|(k, v)| (k, Value::String(v)))
+            .collect(),
+    );
+    match c.kind {
+        ChangeKind::Created => Op::Create {
+            key: c.key,
+            endpoint: INERT,
+            body,
+        },
+        ChangeKind::Updated => Op::Update {
+            key: c.key,
+            endpoint: INERT,
+            path: String::new(),
+            body,
+            changes: Vec::new(),
+        },
+        ChangeKind::Unchanged => Op::Noop { key: c.key },
+    }
 }
 
 /// Plan one singleton: GET, merge presence-masked desired over it, PUT if
@@ -364,11 +600,11 @@ async fn run_ops(
                 let id = if execute {
                     let resp = send(client, endpoint.method, endpoint.path, Some(body)).await?;
                     resp.get("id")
-                        .and_then(Value::as_i64)
-                        .map(|i| i as i32)
-                        .unwrap_or(-1)
+                        .and_then(RefId::from_value)
+                        .unwrap_or(RefId::Pending)
                 } else {
-                    -1
+                    // Preview: the id is server-assigned, so it stays pending.
+                    RefId::Pending
                 };
                 refs.insert(tn, key, id);
             }
@@ -404,24 +640,62 @@ async fn send(
     let null = Value::Null;
     match method {
         HttpMethod::Get => client.get::<Value>(path).await,
-        HttpMethod::Post => {
-            client
-                .post::<Value, Value>(path, body.unwrap_or(&null))
-                .await
-        }
-        HttpMethod::Put => {
-            client
-                .put::<Value, Value>(path, body.unwrap_or(&null))
-                .await
-        }
-        HttpMethod::Patch => {
-            client
-                .patch::<Value, Value>(path, body.unwrap_or(&null))
-                .await
-        }
+        HttpMethod::Post => client.post(path, body.unwrap_or(&null)).await,
+        HttpMethod::Put => client.put(path, body.unwrap_or(&null)).await,
+        HttpMethod::Patch => client.patch(path, body.unwrap_or(&null)).await,
         HttpMethod::Delete => {
             client.delete(path).await?;
             Ok(Value::Null)
         }
+    }
+}
+
+#[cfg(test)]
+mod register_ref_tests {
+    use super::*;
+    use crate::resolver::{RefId, RefSource};
+    use serde_json::json;
+
+    #[test]
+    fn registers_id_and_key_from_array() {
+        let mut refs = RefStore::default();
+        let live = vec![
+            json!({ "name": "TL", "id": 7 }),
+            json!({ "name": "PTP", "id": 9 }),
+        ];
+        register_live_ids(&mut refs, "indexer", "name", &live);
+        assert_eq!(refs.lookup("indexer", "TL"), Some(RefId::Int(7)));
+        assert_eq!(refs.lookup("indexer", "PTP"), Some(RefId::Int(9)));
+    }
+
+    #[test]
+    fn skips_items_missing_id_or_key() {
+        let mut refs = RefStore::default();
+        let live = vec![
+            json!({ "name": "no-id" }),
+            json!({ "id": 3 }),
+            json!({ "name": "ok", "id": 5 }),
+        ];
+        register_live_ids(&mut refs, "t", "name", &live);
+        assert_eq!(refs.lookup("t", "no-id"), None);
+        assert_eq!(refs.lookup("t", "ok"), Some(RefId::Int(5)));
+    }
+
+    #[test]
+    fn list_refs_only_reads_plain_arrays() {
+        // A bare array registers…
+        let mut refs = RefStore::default();
+        register_list_refs(&mut refs, "t", "name", &json!([{ "name": "a", "id": 1 }]));
+        assert_eq!(refs.lookup("t", "a"), Some(RefId::Int(1)));
+
+        // …but a wrapper object (Jellyfin's `{Items:[…]}`) or scalar registers nothing.
+        let mut refs = RefStore::default();
+        register_list_refs(
+            &mut refs,
+            "t",
+            "name",
+            &json!({ "Items": [{ "name": "a", "id": 1 }] }),
+        );
+        assert_eq!(refs.lookup("t", "a"), None);
     }
 }

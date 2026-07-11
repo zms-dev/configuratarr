@@ -66,9 +66,13 @@ fn decode_string_enum<T: Described>(value: &Value) -> anyhow::Result<T> {
 /// Decode → re-encode → keep only the keys the user wrote. A singleton's typed
 /// struct fills omitted fields with type defaults that would clobber live values
 /// on merge; masking to present keys makes "omitted = unmanaged" hold
-/// (validation + casing still come from the full roundtrip). Flat resources only
-/// — a config key maps 1:1 to a wire key (not providers, where keys go into the
-/// `fields` blob).
+/// (validation + casing still come from the full roundtrip).
+///
+/// Recurses into a nested single object (`Nested` / `Option<Nested>`, via
+/// [`FieldDescriptor::nested_present`](crate::descriptor::FieldDescriptor::nested_present))
+/// so its inner keys are masked too; a `Vec<Nested>` has no per-element presence
+/// mask and is copied whole. Not for the `fields` blob (provider keys live inside
+/// the `[{name, value}]` array, not as top-level keys).
 pub fn present_to_wire<T: Described>(cfg: &Value) -> anyhow::Result<Value> {
     let decoded = decode::<T>(cfg)?;
     let full = crate::engine::encode(&decoded)?;
@@ -78,14 +82,26 @@ pub fn present_to_wire<T: Described>(cfg: &Value) -> anyhow::Result<Value> {
     let full_obj = full.as_object().cloned().unwrap_or_default();
 
     let mut out = serde_json::Map::new();
-    for f in T::descriptor().fields {
+    let desc = T::descriptor();
+    for f in desc.fields {
         if f.flatten {
             continue;
         }
-        if cfg_obj.contains_key(f.name) {
-            let wk = standard::wire_key(f.name, f.wire_name);
-            if let Some(v) = full_obj.get(&wk) {
-                out.insert(wk, v.clone());
+        let Some(cfg_v) = cfg_obj.get(f.name) else {
+            continue;
+        };
+        let wk = standard::wire_key(f.name, f.wire_name, desc.case);
+        match f.nested_present {
+            // A nested single object: recurse so the *inner* keys are also masked
+            // to what the user wrote — not the whole struct with type defaults.
+            Some(mask) if !cfg_v.is_null() => {
+                out.insert(wk, mask(cfg_v)?);
+            }
+            // Scalar / Vec-nested / null: copy the fully-encoded value as-is.
+            _ => {
+                if let Some(v) = full_obj.get(&wk) {
+                    out.insert(wk, v.clone());
+                }
             }
         }
     }

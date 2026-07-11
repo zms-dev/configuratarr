@@ -18,6 +18,13 @@ pub struct ResourceArgs {
     /// Write strategy. Required, always explicit — see [`SyncSpec`].
     pub sync: SyncSpec,
 
+    /// Wire-key casing for fields without an explicit `#[wire(name)]`. Defaults
+    /// to `camel` (snake→camelCase, the *arr shape). `pascal` upper-cases the
+    /// first character too (PascalCase) — for .NET-style APIs like Jellyfin
+    /// whose default JSON serialisation is PascalCase.
+    #[darling(default)]
+    pub case: CaseSpec,
+
     /// HTTP operations, each `op = verb("/path")`. Method is always explicit;
     /// path may carry `${self.*}` / `${ref.*}`. The strategy decides which are
     /// required.
@@ -31,6 +38,56 @@ pub struct ResourceArgs {
     pub update: Option<EndpointSpec>,
     #[darling(default)]
     pub delete: Option<EndpointSpec>,
+}
+
+/// `#[nested(...)]` arguments. A bare `#[nested]` parses to the default.
+#[derive(Debug, Default, FromMeta)]
+pub struct NestedArgs {
+    /// Wire-key casing — see [`ResourceArgs::case`].
+    #[darling(default)]
+    pub case: CaseSpec,
+}
+
+/// Wire-key casing strategy for fields lacking an explicit `#[wire(name)]`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum CaseSpec {
+    /// snake→camelCase (the *arr default).
+    #[default]
+    Camel,
+    /// snake→PascalCase (camelCase with the first character upper-cased).
+    Pascal,
+    /// Identity — the wire key is the snake field name (bazarr).
+    Snake,
+}
+
+impl FromMeta for CaseSpec {
+    fn from_string(value: &str) -> darling::Result<Self> {
+        match value {
+            "camel" => Ok(Self::Camel),
+            "pascal" => Ok(Self::Pascal),
+            "snake" => Ok(Self::Snake),
+            other => Err(darling::Error::custom(format!(
+                "unknown case `{other}` — expected camel / pascal / snake"
+            ))),
+        }
+    }
+
+    fn from_expr(expr: &syn::Expr) -> darling::Result<Self> {
+        match expr {
+            syn::Expr::Path(p) => match p.path.get_ident() {
+                Some(id) => Self::from_string(&id.to_string()),
+                None => Err(darling::Error::custom("expected a bare case ident").with_span(expr)),
+            },
+            syn::Expr::Lit(syn::ExprLit {
+                lit: syn::Lit::Str(s),
+                ..
+            }) => Self::from_string(&s.value()),
+            _ => Err(
+                darling::Error::custom("case must be one of: camel / pascal / snake")
+                    .with_span(expr),
+            ),
+        }
+    }
 }
 
 /// One `op = verb("/path")` endpoint parsed from a `#[resource]` attribute.
@@ -108,14 +165,13 @@ impl FromMeta for EndpointSpec {
     }
 }
 
-/// Write-strategy selector parsed from `sync = crud | bulk_replace | singleton`.
+/// Write-strategy selector parsed from `sync = crud | singleton | custom`.
 ///
 /// Accepts a bare ident (`sync = crud`) or a string (`sync = "crud"`). Maps
 /// 1:1 onto `core_lib::SyncKind`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SyncSpec {
     Crud,
-    BulkReplace,
     Singleton,
     Custom,
 }
@@ -124,11 +180,10 @@ impl FromMeta for SyncSpec {
     fn from_string(value: &str) -> darling::Result<Self> {
         match value {
             "crud" => Ok(Self::Crud),
-            "bulk_replace" => Ok(Self::BulkReplace),
             "singleton" => Ok(Self::Singleton),
             "custom" => Ok(Self::Custom),
             other => Err(darling::Error::custom(format!(
-                "unknown sync strategy `{other}` — expected crud / bulk_replace / singleton / custom"
+                "unknown sync strategy `{other}` — expected crud / singleton / custom"
             ))),
         }
     }
@@ -145,10 +200,10 @@ impl FromMeta for SyncSpec {
                 lit: syn::Lit::Str(s),
                 ..
             }) => Self::from_string(&s.value()),
-            _ => Err(darling::Error::custom(
-                "sync must be one of: crud / bulk_replace / singleton",
-            )
-            .with_span(expr)),
+            _ => Err(
+                darling::Error::custom("sync must be one of: crud / singleton / custom")
+                    .with_span(expr),
+            ),
         }
     }
 }
@@ -177,6 +232,7 @@ pub struct ServiceArgs {
 pub enum AuthSpec {
     None,
     ApiKey { header: String },
+    ApiKeyQuery { param: String },
     Bearer,
     Basic,
     FormCookie { login_path: String },
@@ -229,11 +285,20 @@ impl AuthSpec {
             "bearer" => Ok(Self::Bearer),
             "basic" => Ok(Self::Basic),
             "api_key" => {
-                let header = arg("header").ok_or_else(|| {
-                    darling::Error::custom("auth = api_key(...) requires `header = \"<name>\"`")
-                        .with_span(span)
-                })?;
-                Ok(Self::ApiKey { header })
+                // `header = "..."` for the header scheme, or `query = "..."` for
+                // the api-key-in-query-string scheme (LazyLibrarian). Exactly one.
+                match (arg("header"), arg("query")) {
+                    (Some(_), Some(_)) => Err(darling::Error::custom(
+                        "auth = api_key(...) takes either `header` or `query`, not both",
+                    )
+                    .with_span(span)),
+                    (Some(header), None) => Ok(Self::ApiKey { header }),
+                    (None, Some(param)) => Ok(Self::ApiKeyQuery { param }),
+                    (None, None) => Err(darling::Error::custom(
+                        "auth = api_key(...) requires `header = \"<name>\"` or `query = \"<name>\"`",
+                    )
+                    .with_span(span)),
+                }
             }
             "form_cookie" => {
                 let login_path = arg("login_path").ok_or_else(|| {
@@ -443,6 +508,12 @@ pub struct FieldAttrs {
     pub is_key: bool,
     pub wire_name: Option<String>,
     pub read_only: bool,
+    /// `#[wire(null)]` — emit a `None` optional as JSON `null` instead of
+    /// omitting the key (standard codec).
+    pub emit_none: bool,
+    /// `#[wire(int)]` — encode a bool as the integer `0`/`1` and decode it back
+    /// (standard codec).
+    pub as_int: bool,
     pub flatten: bool,
     /// `#[fields_map]` — a `Json` object field encoded as a `[{name, value}]`
     /// array on the wire (the *arr provider fields blob).
@@ -506,6 +577,12 @@ impl FieldAttrs {
                         }
                         darling::ast::NestedMeta::Meta(Meta::Path(p)) if p.is_ident("flatten") => {
                             out.flatten = true;
+                        }
+                        darling::ast::NestedMeta::Meta(Meta::Path(p)) if p.is_ident("null") => {
+                            out.emit_none = true;
+                        }
+                        darling::ast::NestedMeta::Meta(Meta::Path(p)) if p.is_ident("int") => {
+                            out.as_int = true;
                         }
                         darling::ast::NestedMeta::Meta(Meta::NameValue(nv))
                             if nv.path.is_ident("name") =>

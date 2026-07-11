@@ -11,8 +11,8 @@ use quote::quote;
 use syn::DeriveInput;
 
 use crate::attrs::{
-    CodecSpec, EndpointSpec, FieldAttrs, HttpMethodSpec, ResourceArgs, SyncSpec, collect_doc,
-    parse_codec_spec,
+    CaseSpec, CodecSpec, EndpointSpec, FieldAttrs, HttpMethodSpec, NestedArgs, ResourceArgs,
+    SyncSpec, collect_doc, parse_codec_spec,
 };
 use crate::field_kind::{Kind, classify, inner_generic, snake_case};
 
@@ -37,8 +37,16 @@ pub fn expand(args: TokenStream, input: TokenStream) -> darling::Result<TokenStr
         .clone()
         .unwrap_or_else(|| snake_case(&ident.to_string()));
     let (codec_kind, codec_meta) = codec_spec_tokens(&codec_spec);
-    let sync_tok = sync_spec_tokens(resource_args.sync);
+    // `sync = custom` carries its reconcile hook inline (the struct must impl
+    // `CustomSync`); every other strategy is a bare variant.
+    let sync_tok = match resource_args.sync {
+        SyncSpec::Custom => {
+            quote!(::core_lib::SyncKind::Custom(<#ident as ::core_lib::CustomSync>::reconcile))
+        }
+        other => sync_spec_tokens(other),
+    };
 
+    let case_tok = case_tokens(resource_args.case);
     let (fields_tok, empty_body) = match &input.data {
         syn::Data::Struct(s) => {
             let (fields, empties) = emit_struct_fields(ident, &s.fields)?;
@@ -68,6 +76,7 @@ pub fn expand(args: TokenStream, input: TokenStream) -> darling::Result<TokenStr
         &struct_doc_tok,
         &codec_kind,
         &codec_meta,
+        &case_tok,
         &sync_tok,
         &fields_tok,
         &[],
@@ -126,6 +135,7 @@ pub(crate) fn emit_described(
     doc_tok: &TokenStream,
     codec_kind: &TokenStream,
     codec_meta: &TokenStream,
+    case_tok: &TokenStream,
     sync_tok: &TokenStream,
     fields_tok: &[TokenStream],
     variants_tok: &[TokenStream],
@@ -142,6 +152,7 @@ pub(crate) fn emit_described(
                     type_name: #type_name,
                     doc: #doc_tok,
                     codec: #codec_kind,
+                    case: #case_tok,
                     sync: #sync_tok,
                     codec_meta: #codec_meta,
                     fields: &[#(#fields_tok),*],
@@ -161,7 +172,8 @@ pub(crate) fn emit_described(
 
 /// `#[nested]` — an embedded sub-resource: no path, `SyncKind::Embedded`,
 /// type_name defaulted from the ident, standard codec (or a `#[codec]` sibling).
-pub fn expand_nested(_args: TokenStream, input: TokenStream) -> darling::Result<TokenStream> {
+pub fn expand_nested(args: TokenStream, input: TokenStream) -> darling::Result<TokenStream> {
+    let nested_args = NestedArgs::from_list(&NestedMeta::parse_meta_list(args)?)?;
     let input: DeriveInput = syn::parse2(input).map_err(Error::from)?;
     let ident = &input.ident;
     let codec_spec = parse_codec_spec(&input.attrs)?;
@@ -169,6 +181,7 @@ pub fn expand_nested(_args: TokenStream, input: TokenStream) -> darling::Result<
     let doc_tok = doc_to_tokens(&collect_doc(&input.attrs));
     let type_name = snake_case(&ident.to_string());
 
+    let case_tok = case_tokens(nested_args.case);
     let (fields_tok, empties) = match &input.data {
         syn::Data::Struct(s) => emit_struct_fields(ident, &s.fields)?,
         _ => return Err(Error::custom("#[nested] only supports structs").with_span(ident)),
@@ -183,6 +196,7 @@ pub fn expand_nested(_args: TokenStream, input: TokenStream) -> darling::Result<
         &doc_tok,
         &codec_kind,
         &codec_meta,
+        &case_tok,
         &quote!(::core_lib::SyncKind::Embedded),
         &fields_tok,
         &[],
@@ -208,6 +222,8 @@ pub fn expand_fields_blob(args: TokenStream, input: TokenStream) -> darling::Res
     let ident = &input.ident;
     let doc_tok = doc_to_tokens(&collect_doc(&input.attrs));
     let type_name = snake_case(&ident.to_string());
+    // Provider fields-blob variants are always *arr camelCase.
+    let case_tok = quote!(::core_lib::Case::Camel);
 
     let (fields_tok, empties) = match &input.data {
         syn::Data::Struct(s) => emit_struct_fields(ident, &s.fields)?,
@@ -223,6 +239,7 @@ pub fn expand_fields_blob(args: TokenStream, input: TokenStream) -> darling::Res
         &doc_tok,
         &codec_kind,
         &codec_meta,
+        &case_tok,
         &quote!(::core_lib::SyncKind::Embedded),
         &fields_tok,
         &[],
@@ -248,9 +265,16 @@ fn default_lit_tokens(lit: &syn::Lit) -> darling::Result<TokenStream> {
 fn sync_spec_tokens(spec: SyncSpec) -> TokenStream {
     match spec {
         SyncSpec::Crud => quote!(::core_lib::SyncKind::Crud),
-        SyncSpec::BulkReplace => quote!(::core_lib::SyncKind::BulkReplace),
         SyncSpec::Singleton => quote!(::core_lib::SyncKind::Singleton),
         SyncSpec::Custom => quote!(::core_lib::SyncKind::Custom),
+    }
+}
+
+fn case_tokens(spec: CaseSpec) -> TokenStream {
+    match spec {
+        CaseSpec::Camel => quote!(::core_lib::Case::Camel),
+        CaseSpec::Pascal => quote!(::core_lib::Case::Pascal),
+        CaseSpec::Snake => quote!(::core_lib::Case::Snake),
     }
 }
 
@@ -335,13 +359,23 @@ fn emit_struct_fields(
         let get_tok = kind.to_get_expr(field_ident);
         let set_tok = kind.to_set_expr(field_ident, &f.ty);
 
-        let wire_name_tok: TokenStream = match attrs.wire_name {
+        let wire_name_tok: TokenStream = match &attrs.wire_name {
             Some(n) => quote!(Some(#n)),
             None => quote!(None),
         };
         // Id fields are server-assigned and never sent on write.
         let read_only = attrs.read_only || attrs.is_id;
         let read_only_tok = if read_only {
+            quote!(true)
+        } else {
+            quote!(false)
+        };
+        let emit_none_tok = if attrs.emit_none {
+            quote!(true)
+        } else {
+            quote!(false)
+        };
+        let as_int_tok = if attrs.as_int {
             quote!(true)
         } else {
             quote!(false)
@@ -389,6 +423,42 @@ fn emit_struct_fields(
             _ => quote!(None),
         };
 
+        // Mirror of `nested_docs`, but for `#[reference]` targets: lets
+        // `reference_targets` descend into a nested type's FKs without an instance
+        // (a `Vec<Nested>`/`Option<Nested>` is empty in `empty()`).
+        let nested_ref_targets_tok: TokenStream = match &kind {
+            Kind::Nested { .. } => {
+                let inner = &f.ty;
+                quote!(Some(|out, seen| {
+                    ::core_lib::engine::collect_reference_targets::<#inner>(out, seen)
+                }))
+            }
+            Kind::OptNested { .. } | Kind::VecNested { .. } => match inner_generic(&f.ty) {
+                Some(inner) => quote!(Some(|out, seen| {
+                    ::core_lib::engine::collect_reference_targets::<#inner>(out, seen)
+                })),
+                None => quote!(None),
+            },
+            _ => quote!(None),
+        };
+
+        // For a nested single object (`Nested` / `Option<Nested>`), emit the
+        // inner type's presence-masked config→wire so `present_to_wire` recurses.
+        // `Vec<Nested>` is excluded — a list has no per-element presence mask.
+        let nested_present_tok: TokenStream = match &kind {
+            Kind::Nested { .. } => {
+                let inner = &f.ty;
+                quote!(Some(|v| ::core_lib::engine::config_present_to_wire::<#inner>(v)))
+            }
+            Kind::OptNested { .. } => match inner_generic(&f.ty) {
+                Some(inner) => {
+                    quote!(Some(|v| ::core_lib::engine::config_present_to_wire::<#inner>(v)))
+                }
+                None => quote!(None),
+            },
+            _ => quote!(None),
+        };
+
         out.push(quote! {
             ::core_lib::FieldDescriptor::<#struct_ident> {
                 name: #name_str,
@@ -397,12 +467,16 @@ fn emit_struct_fields(
                 kind: #kind_tok,
                 wire_name: #wire_name_tok,
                 read_only: #read_only_tok,
+                emit_none: #emit_none_tok,
+                as_int: #as_int_tok,
                 default: #default_tok,
                 secret: #secret_tok,
                 flatten: #flatten_tok,
                 fields_map: #fields_map_tok,
                 reference: #reference_tok,
                 nested_docs: #nested_docs_tok,
+                nested_reference_targets: #nested_ref_targets_tok,
+                nested_present: #nested_present_tok,
                 get: |t| { #get_tok },
                 set: |t, v| { #set_tok },
             }
