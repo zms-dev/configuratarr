@@ -122,7 +122,7 @@ checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
 name = "autobrr-v1"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "core-lib",
@@ -148,7 +148,7 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "bazarr-v1"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "core-lib",
@@ -282,7 +282,7 @@ checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 
 [[package]]
 name = "cmd-doc-gen"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "clap-markdown",
  "core-cli",
@@ -306,7 +306,7 @@ dependencies = [
 
 [[package]]
 name = "config-doc-gen"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "autobrr-v1",
@@ -324,7 +324,7 @@ dependencies = [
 
 [[package]]
 name = "configuratarr"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -366,14 +366,14 @@ dependencies = [
 
 [[package]]
 name = "core-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "clap",
 ]
 
 [[package]]
 name = "core-config"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "autobrr-v1",
@@ -408,7 +408,7 @@ checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
 
 [[package]]
 name = "core-http"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "reqwest",
@@ -421,7 +421,7 @@ dependencies = [
 
 [[package]]
 name = "core-lib"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "base64",
@@ -437,7 +437,7 @@ dependencies = [
 
 [[package]]
 name = "core-macros"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "darling",
  "proc-macro2",
@@ -447,7 +447,7 @@ dependencies = [
 
 [[package]]
 name = "core-testkit"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "core-lib",
@@ -1087,7 +1087,7 @@ checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 
 [[package]]
 name = "jellyfin-v11"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "core-lib",
@@ -1203,7 +1203,7 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
 name = "lazylibrarian-v1"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "core-lib",
@@ -1223,7 +1223,7 @@ checksum = "68ab91017fe16c622486840e4c83c9a37afeff978bd239b5293d61ece587de66"
 
 [[package]]
 name = "lidarr-v1"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "core-lib",
@@ -1490,7 +1490,7 @@ dependencies = [
 
 [[package]]
 name = "prowlarr-v1"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "core-lib",
@@ -1535,7 +1535,7 @@ checksum = "69cdb34c158ceb288df11e18b4bd39de994f6657d83847bdffdbd7f346754b0f"
 
 [[package]]
 name = "radarr-v3"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "core-lib",
@@ -1909,7 +1909,7 @@ dependencies = [
 
 [[package]]
 name = "service-registry"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "sharded-slab"
@@ -1976,7 +1976,7 @@ dependencies = [
 
 [[package]]
 name = "sonarr-v3"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "core-lib",
