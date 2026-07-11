@@ -56,8 +56,7 @@ impl CustomSync for NewznabProvider {
         execute: bool,
     ) -> CustomSyncFuture<'a> {
         Box::pin(async move {
-            super::reconcile_encoded::<Self>(client, desired, execute, "newznab", "newznab", true)
-                .await
+            super::reconcile_encoded::<Self>(client, desired, execute, "newznab", "newznab").await
         })
     }
 }

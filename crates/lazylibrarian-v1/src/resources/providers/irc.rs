@@ -1,6 +1,6 @@
-//! IRC providers (`IRC_<n>` config sections). Create-only by `DISPNAME` via
-//! `addProvider&type=irc` — LazyLibrarian's `changeProvider` can't match irc
-//! providers by display name. The host key is `SERVER` (not `HOST`). See [`super`].
+//! IRC providers (`IRC_<n>` config sections). Upsert by `DISPNAME` (stub
+//! `addProvider` + `changeProvider` by internal `NAME`); the host key is `SERVER`
+//! (not `HOST`). See [`super`].
 
 use core_lib::{CustomSync, CustomSyncFuture, HttpClient, RefStore};
 use core_macros::resource;
@@ -44,7 +44,7 @@ impl CustomSync for IrcProvider {
         execute: bool,
     ) -> CustomSyncFuture<'a> {
         Box::pin(async move {
-            super::reconcile_encoded::<Self>(client, desired, execute, "irc", "irc", false).await
+            super::reconcile_encoded::<Self>(client, desired, execute, "irc", "irc").await
         })
     }
 }

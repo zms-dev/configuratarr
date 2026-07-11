@@ -61,8 +61,7 @@ impl CustomSync for TorznabProvider {
         execute: bool,
     ) -> CustomSyncFuture<'a> {
         Box::pin(async move {
-            super::reconcile_encoded::<Self>(client, desired, execute, "torznab", "torznab", true)
-                .await
+            super::reconcile_encoded::<Self>(client, desired, execute, "torznab", "torznab").await
         })
     }
 }
