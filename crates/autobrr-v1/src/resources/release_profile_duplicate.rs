@@ -4,8 +4,9 @@
 //! releases "the same" for dedup. Filters attach one via
 //! `release_profile_duplicate_id`. The API exposes create + delete but **no
 //! update** (`PUT` 405), so this is a `sync = custom` create-or-leave resource
-//! ([`core_lib::reconcile::create_only`], keyed by `name`) — edit by
-//! delete+recreate. No prune (the custom seam carries no `prune` flag).
+//! ([`core_lib::reconcile::create_only_prune`], keyed by `name`) — edit by
+//! delete+recreate. Under `--prune`, profiles the config no longer declares are
+//! deleted via `DELETE /api/release/profiles/duplicate/{id}`.
 
 use core_lib::engine;
 use core_lib::reconcile;
@@ -79,22 +80,38 @@ impl CustomSync for ReleaseProfileDuplicate {
         client: &'a HttpClient,
         desired: &'a [Value],
         _refs: &'a mut RefStore,
+        prune: bool,
         execute: bool,
     ) -> CustomSyncFuture<'a> {
         Box::pin(async move {
             let live: Vec<Value> = client.get("/api/release/profiles/duplicate").await?;
-            let present = reconcile::present_keys(&live, "name");
-            let client = client.clone();
-            reconcile::create_only(desired, "name", &present, execute, move |_name, cfg| {
-                let client = client.clone();
-                async move {
-                    let wire = engine::encode_config::<Self>(&cfg)?;
-                    let _: Value = client
-                        .post("/api/release/profiles/duplicate", &wire)
-                        .await?;
-                    Ok(())
-                }
-            })
+            reconcile::create_only_prune(
+                desired,
+                &live,
+                "name",
+                prune,
+                execute,
+                |_name, cfg| {
+                    let client = client.clone();
+                    async move {
+                        let wire = engine::encode_config::<Self>(&cfg)?;
+                        let _: Value = client
+                            .post("/api/release/profiles/duplicate", &wire)
+                            .await?;
+                        Ok(())
+                    }
+                },
+                |l| {
+                    let client = client.clone();
+                    let id = l.get("id").cloned().unwrap_or(Value::Null);
+                    async move {
+                        client
+                            .delete(&format!("/api/release/profiles/duplicate/{id}"))
+                            .await?;
+                        Ok(())
+                    }
+                },
+            )
             .await
         })
     }

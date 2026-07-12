@@ -1,8 +1,8 @@
 //! Reconcile primitives for `sync = custom` hooks.
 //!
 //! The [`Custom`](crate::SyncKind::Custom) seam hands a hook the raw
-//! `(client, desired, refs, execute)` and trusts it to own its HTTP, ordering,
-//! and idempotency. Two mechanics recur in *every* hook and are easy to get
+//! `(client, desired, refs, prune, execute)` and trusts it to own its HTTP,
+//! ordering, and idempotency. Two mechanics recur in *every* hook and are easy to get
 //! wrong: **honouring `execute`** (a preview must perform no writes) and
 //! **turning the outcome into report [`Change`]s**. Forget the first in one write
 //! path and a `plan` silently mutates the server.
@@ -15,8 +15,14 @@
 //!
 //! Shapes covered:
 //! * [`create_only`] — keyed create-or-leave (no update, no prune).
+//! * [`create_only_prune`] — create-or-leave plus a `--prune` delete tail (an API
+//!   that creates + deletes but can't update).
 //! * [`upsert`] — keyed create-or-update, no prune (the API doesn't round-trip
 //!   writes, so idempotency is a service-supplied predicate, not merge-equality).
+//! * [`upsert_prune`] — [`upsert`] plus a `--prune` delete tail (the API *does*
+//!   round-trip deletes).
+//! * [`prune_absent`] — the shared prune tail (delete each live item the config
+//!   no longer declares); a bespoke hook can bolt it onto its own reconcile.
 //! * [`replace`] — whole-list structural replace (one endpoint owns the set).
 //!
 //! Genuinely bespoke hooks (multi-endpoint per item, sparse form singletons)
@@ -129,6 +135,118 @@ where
         };
         changes.push(change);
     }
+    Ok(changes)
+}
+
+/// Delete each live item whose `key_field` isn't in `desired`, gated on `prune`
+/// **and** `execute`. Emits one [`Change::removed`] per pruned item (in `live`
+/// order). Shared prune tail of [`upsert_prune`] / [`create_only_prune`]; a hook
+/// that already reconciles creates/updates itself (autobrr `filter`) can call
+/// this directly for its prune half.
+///
+/// `delete(live)` performs the DELETE for one live item — it receives the live
+/// value so it can read the server id / key the delete path needs.
+pub async fn prune_absent<D, DFut>(
+    desired: &[Value],
+    live: &[Value],
+    key_field: &str,
+    prune: bool,
+    execute: bool,
+    delete: D,
+) -> anyhow::Result<Vec<Change>>
+where
+    D: Fn(&Value) -> DFut,
+    DFut: Future<Output = anyhow::Result<()>>,
+{
+    if !prune {
+        return Ok(Vec::new());
+    }
+    fn key_of<'v>(v: &'v Value, field: &str) -> Option<&'v str> {
+        v.get(field).and_then(Value::as_str)
+    }
+    let desired_keys: std::collections::HashSet<&str> = desired
+        .iter()
+        .filter_map(|v| key_of(v, key_field))
+        .collect();
+
+    let mut changes = Vec::new();
+    for l in live {
+        let Some(key) = key_of(l, key_field) else {
+            continue;
+        };
+        if desired_keys.contains(key) {
+            continue;
+        }
+        if execute {
+            delete(l).await?;
+        }
+        changes.push(Change::removed(key));
+    }
+    Ok(changes)
+}
+
+/// Keyed "create-or-update-or-prune": [`upsert`] plus a prune tail. Matches each
+/// desired item to a live one by `key_field` (create / update / leave via
+/// `in_sync`), then — when `prune` — deletes every live item the config no longer
+/// declares. The declarative-collection shape for a custom hook whose API *does*
+/// round-trip deletes: mirrors crud's `--prune` gate (`prune` = `opts.prune`),
+/// but keeps the caller's own idempotency predicate for the write half (redacted
+/// secrets, server-rewritten ids). Emits the [`upsert`] changes in `desired`
+/// order followed by one [`Change::removed`] per pruned item.
+#[allow(clippy::too_many_arguments)]
+pub async fn upsert_prune<S, C, CFut, U, UFut, D, DFut>(
+    desired: &[Value],
+    live: &[Value],
+    key_field: &str,
+    in_sync: S,
+    prune: bool,
+    execute: bool,
+    create: C,
+    update: U,
+    delete: D,
+) -> anyhow::Result<Vec<Change>>
+where
+    S: Fn(&Value, &Value) -> bool,
+    C: Fn(Value) -> CFut,
+    CFut: Future<Output = anyhow::Result<()>>,
+    U: Fn(&Value, Value) -> UFut,
+    UFut: Future<Output = anyhow::Result<()>>,
+    D: Fn(&Value) -> DFut,
+    DFut: Future<Output = anyhow::Result<()>>,
+{
+    let mut changes = upsert(desired, live, key_field, in_sync, execute, create, update).await?;
+    changes.extend(prune_absent(desired, live, key_field, prune, execute, delete).await?);
+    Ok(changes)
+}
+
+/// Keyed "create-or-leave-or-prune": [`create_only`] plus a prune tail. For an
+/// API that creates and deletes but has **no update** (autobrr api keys, dedup
+/// profiles) — a present key is left untouched, an absent-from-config live item
+/// is deleted when `prune`. Emits one [`Change`] per desired item (created /
+/// unchanged) in order, then one [`Change::removed`] per pruned item.
+///
+/// `create(key, cfg)` runs for each desired key not already live; `delete(live)`
+/// runs for each live item the config no longer declares. Both gated on
+/// `execute`; `delete` additionally on `prune`.
+#[allow(clippy::too_many_arguments)]
+pub async fn create_only_prune<C, CFut, D, DFut>(
+    desired: &[Value],
+    live: &[Value],
+    key_field: &str,
+    prune: bool,
+    execute: bool,
+    create: C,
+    delete: D,
+) -> anyhow::Result<Vec<Change>>
+where
+    C: Fn(String, Value) -> CFut,
+    CFut: Future<Output = anyhow::Result<()>>,
+    D: Fn(&Value) -> DFut,
+    DFut: Future<Output = anyhow::Result<()>>,
+{
+    let present = present_keys(live, key_field);
+    let mut changes = create_only(desired, key_field, &present, execute, create).await?;
+    changes.extend(prune_absent(desired, live, key_field, prune, execute, delete).await?);
     Ok(changes)
 }
 
@@ -338,5 +456,177 @@ mod tests {
         .unwrap();
         assert_eq!(c, vec![Change::updated("repos")]);
         assert!(!wrote.get());
+    }
+
+    #[tokio::test]
+    async fn prune_absent_deletes_only_undeclared_and_gates() {
+        let desired = vec![json!({ "name": "keep" })];
+        let live = vec![
+            json!({ "name": "keep", "id": 1 }),
+            json!({ "name": "gone", "id": 2 }),
+        ];
+
+        // prune off → no delete, no change rows.
+        let deletes = Cell::new(0);
+        let c = prune_absent(&desired, &live, "name", false, true, |_l| {
+            deletes.set(deletes.get() + 1);
+            async { Ok(()) }
+        })
+        .await
+        .unwrap();
+        assert_eq!(deletes.get(), 0);
+        assert!(c.is_empty());
+
+        // prune on → the undeclared live item is removed.
+        let deletes = Cell::new(0);
+        let c = prune_absent(&desired, &live, "name", true, true, |_l| {
+            deletes.set(deletes.get() + 1);
+            async { Ok(()) }
+        })
+        .await
+        .unwrap();
+        assert_eq!(deletes.get(), 1);
+        assert_eq!(c, vec![Change::removed("gone")]);
+
+        // prune on but preview → reports the removal, writes nothing.
+        let deletes = Cell::new(0);
+        let c = prune_absent(&desired, &live, "name", true, false, |_l| {
+            deletes.set(deletes.get() + 1);
+            async { Ok(()) }
+        })
+        .await
+        .unwrap();
+        assert_eq!(deletes.get(), 0);
+        assert_eq!(c, vec![Change::removed("gone")]);
+    }
+
+    #[tokio::test]
+    async fn upsert_prune_creates_updates_and_prunes() {
+        let in_sync = |w: &Value, l: &Value| {
+            w.as_object()
+                .unwrap()
+                .iter()
+                .all(|(k, v)| l.get(k) == Some(v))
+        };
+        let desired = vec![
+            json!({ "name": "keep", "port": 1 }),
+            json!({ "name": "drift", "port": 5 }),
+            json!({ "name": "fresh", "port": 3 }),
+        ];
+        let live = vec![
+            json!({ "name": "keep", "port": 1, "id": 10 }),
+            json!({ "name": "drift", "port": 2, "id": 11 }),
+            json!({ "name": "orphan", "port": 9, "id": 12 }),
+        ];
+        let updates = Cell::new(0);
+        let deletes = Cell::new(0);
+        let changes = upsert_prune(
+            &desired,
+            &live,
+            "name",
+            in_sync,
+            true,
+            true,
+            |_w| async { Ok(()) },
+            |_l, _w| {
+                updates.set(updates.get() + 1);
+                async { Ok(()) }
+            },
+            |_l| {
+                deletes.set(deletes.get() + 1);
+                async { Ok(()) }
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(updates.get(), 1, "only the drifted 'drift' is updated");
+        assert_eq!(deletes.get(), 1, "only undeclared 'orphan' is pruned");
+        assert_eq!(
+            changes,
+            vec![
+                Change::unchanged("keep"),
+                Change::updated("drift"),
+                Change::created("fresh"),
+                Change::removed("orphan"),
+            ]
+        );
+    }
+
+    /// `prune = false` must leave every undeclared live item alone: no delete
+    /// fires and no `Removed` change is reported (the write half still runs).
+    #[tokio::test]
+    async fn upsert_prune_prune_false_leaves_undeclared() {
+        let in_sync = |w: &Value, l: &Value| {
+            w.as_object()
+                .unwrap()
+                .iter()
+                .all(|(k, v)| l.get(k) == Some(v))
+        };
+        let desired = vec![json!({ "name": "keep", "port": 1 })];
+        let live = vec![
+            json!({ "name": "keep", "port": 1, "id": 10 }),
+            json!({ "name": "orphan", "port": 9, "id": 11 }),
+        ];
+        let deletes = Cell::new(0);
+        let changes = upsert_prune(
+            &desired,
+            &live,
+            "name",
+            in_sync,
+            false, // prune off
+            true,
+            |_w| async { Ok(()) },
+            |_l, _w| async { Ok(()) },
+            |_l| {
+                deletes.set(deletes.get() + 1);
+                async { Ok(()) }
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(deletes.get(), 0, "prune off → no delete");
+        assert_eq!(
+            changes,
+            vec![Change::unchanged("keep")],
+            "prune off → no Removed row"
+        );
+    }
+
+    #[tokio::test]
+    async fn create_only_prune_leaves_creates_and_prunes() {
+        let desired = vec![json!({ "name": "a" }), json!({ "name": "b" })];
+        let live = vec![
+            json!({ "name": "a", "id": 1 }),
+            json!({ "name": "stale", "id": 2 }),
+        ];
+        let creates = Cell::new(0);
+        let deletes = Cell::new(0);
+        let changes = create_only_prune(
+            &desired,
+            &live,
+            "name",
+            true,
+            true,
+            |_k, _c| {
+                creates.set(creates.get() + 1);
+                async { Ok(()) }
+            },
+            |_l| {
+                deletes.set(deletes.get() + 1);
+                async { Ok(()) }
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(creates.get(), 1, "only the absent 'b' is created");
+        assert_eq!(deletes.get(), 1, "only undeclared 'stale' is pruned");
+        assert_eq!(
+            changes,
+            vec![
+                Change::unchanged("a"),
+                Change::created("b"),
+                Change::removed("stale"),
+            ]
+        );
     }
 }

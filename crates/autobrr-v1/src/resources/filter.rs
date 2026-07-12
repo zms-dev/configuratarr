@@ -5,8 +5,9 @@
 //! id, and the full ~40-field config is then applied via
 //! `PATCH /api/filters/{id}`. A single `crud` POST would ship a half-configured
 //! filter, so this is a `sync = custom` hook that owns the two-step create, the
-//! update (PATCH), and the change detection. No prune (the custom seam carries no
-//! `prune` flag).
+//! update (PATCH), and the change detection. Under `--prune`, filters the config
+//! no longer declares are deleted via `DELETE /api/filters/{id}`
+//! ([`core_lib::reconcile::prune_absent`] bolted onto the bespoke loop).
 //!
 //! **Idempotency.** Live filters carry server-added fields — an `id`, and ids on
 //! nested `actions` — that the desired config never sets. So "changed?" is a
@@ -17,6 +18,7 @@
 use std::collections::HashSet;
 
 use core_lib::engine;
+use core_lib::reconcile;
 use core_lib::{Change, ChangeKind, CustomSync, CustomSyncFuture, HttpClient, RefStore};
 use core_macros::resource;
 use serde_json::{Map, Value, json};
@@ -300,6 +302,7 @@ impl CustomSync for Filter {
         client: &'a HttpClient,
         desired: &'a [Value],
         _refs: &'a mut RefStore,
+        prune: bool,
         execute: bool,
     ) -> CustomSyncFuture<'a> {
         Box::pin(async move {
@@ -373,8 +376,24 @@ impl CustomSync for Filter {
                     ChangeKind::Created => Change::created(name),
                     ChangeKind::Updated => Change::updated(name),
                     ChangeKind::Unchanged => Change::unchanged(name),
+                    // The loop only ever creates/updates/leaves a declared filter.
+                    ChangeKind::Removed => unreachable!("filter loop never prunes"),
                 });
             }
+
+            // Prune: delete live filters the config no longer declares. Deleting a
+            // filter cascades to its actions server-side.
+            changes.extend(
+                reconcile::prune_absent(desired, &live, "name", prune, execute, |l| {
+                    let client = client.clone();
+                    let id = l.get("id").cloned().unwrap_or(Value::Null);
+                    async move {
+                        client.delete(&format!("/api/filters/{id}")).await?;
+                        Ok(())
+                    }
+                })
+                .await?,
+            );
 
             Ok(changes)
         })

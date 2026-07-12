@@ -9,11 +9,11 @@
 //! only writes on real drift.
 //!
 //! Write paths are irregular: create is `POST /api/irc`, update is
-//! `PUT /api/irc/network/{id}` (a bare `/api/irc/{id}` 404s). No prune (the custom
-//! seam carries no `prune` flag; deleting a network you didn't author would be
-//! surprising — remove it in autobrr). Credentials (`pass`, `auth.password`,
-//! channel keys) are write-only — returned `<redacted>`, so a declared value
-//! reads as drift and re-applies as an update.
+//! `PUT /api/irc/network/{id}`, delete is `DELETE /api/irc/network/{id}` (a bare
+//! `/api/irc/{id}` 404s). Under `--prune`, networks the config no longer declares
+//! are deleted ([`core_lib::reconcile::upsert_prune`]). Credentials (`pass`,
+//! `auth.password`, channel keys) are write-only — returned `<redacted>`, so a
+//! declared value reads as drift and re-applies as an update.
 
 use core_lib::{
     CustomSync, CustomSyncFuture, HttpClient, RefStore, SecretValue, engine, reconcile,
@@ -81,6 +81,7 @@ impl CustomSync for IrcNetwork {
         client: &'a HttpClient,
         desired: &'a [Value],
         _refs: &'a mut RefStore,
+        prune: bool,
         execute: bool,
     ) -> CustomSyncFuture<'a> {
         Box::pin(async move {
@@ -91,11 +92,12 @@ impl CustomSync for IrcNetwork {
                 .map(engine::encode_config::<Self>)
                 .collect::<anyhow::Result<_>>()?;
 
-            reconcile::upsert(
+            reconcile::upsert_prune(
                 &wire,
                 &live,
                 "name",
                 diff::subset,
+                prune,
                 execute,
                 |w| {
                     let client = client.clone();
@@ -114,6 +116,15 @@ impl CustomSync for IrcNetwork {
                     reconcile::echo(&mut w, "id", l);
                     async move {
                         let _: Value = client.put(&format!("/api/irc/network/{id}"), &w).await?;
+                        Ok(())
+                    }
+                },
+                |l| {
+                    let client = client.clone();
+                    let id = l.get("id").cloned().unwrap_or(Value::Null);
+                    // Delete shares the irregular network path.
+                    async move {
+                        client.delete(&format!("/api/irc/network/{id}")).await?;
                         Ok(())
                     }
                 },

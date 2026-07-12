@@ -15,9 +15,9 @@
 //! config back using the *live* identifier + re-sent settings. Idempotency is
 //! judged on the readable fields (`enabled`, `implementation`, `base_url`); a
 //! settings-only edit can't be detected (the values aren't readable) and is
-//! always re-sent on an update triggered by another change. No prune (the custom
-//! seam carries no `prune` flag; matches the "don't delete server-owned defs"
-//! caution).
+//! always re-sent on an update triggered by another change. Under `--prune`,
+//! indexers the config no longer declares are deleted via
+//! `DELETE /api/indexer/{id}` ([`core_lib::reconcile::upsert_prune`]).
 
 use core_lib::{CustomSync, CustomSyncFuture, HttpClient, Json, RefStore, engine, reconcile};
 use core_macros::resource;
@@ -73,6 +73,7 @@ impl CustomSync for Indexer {
         client: &'a HttpClient,
         desired: &'a [Value],
         _refs: &'a mut RefStore,
+        prune: bool,
         execute: bool,
     ) -> CustomSyncFuture<'a> {
         Box::pin(async move {
@@ -84,11 +85,12 @@ impl CustomSync for Indexer {
                 .map(engine::encode_config::<Self>)
                 .collect::<anyhow::Result<_>>()?;
 
-            reconcile::upsert(
+            reconcile::upsert_prune(
                 &wire,
                 &live,
                 "name",
                 readable_matches,
+                prune,
                 execute,
                 |w| {
                     let client = client.clone();
@@ -107,6 +109,14 @@ impl CustomSync for Indexer {
                     reconcile::echo(&mut w, "identifier", l);
                     async move {
                         let _: Value = client.put(&format!("/api/indexer/{id}"), &w).await?;
+                        Ok(())
+                    }
+                },
+                |l| {
+                    let client = client.clone();
+                    let id = l.get("id").cloned().unwrap_or(Value::Null);
+                    async move {
+                        client.delete(&format!("/api/indexer/{id}")).await?;
                         Ok(())
                     }
                 },
