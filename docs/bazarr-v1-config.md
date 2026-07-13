@@ -33,8 +33,6 @@ bazarr's JSON keys are the snake field names verbatim; each section is
 | `postgresql` | [`postgresql`](#postgresql) | no |  | PostgreSQL backend. |
 | `translator` | [`translator`](#translator) | no |  | Machine-translation engine. |
 | `log` | [`log`](#log) | no |  | Log filtering. |
-| `movie_scores` | [`movie_scores`](#movie-scores) | no |  | Movie subtitle-match scoring weights. |
-| `series_scores` | [`series_scores`](#series-scores) | no |  | Series subtitle-match scoring weights. |
 | `addic7ed` | [`addic7ed`](#addic7ed) | no |  | Addic7ed provider settings. |
 | `anidb` | [`ani_db`](#ani-db) | no |  | AniDB provider settings. |
 | `animetosho` | [`anime_tosho`](#anime-tosho) | no |  | AnimeTosho provider settings. |
@@ -283,39 +281,6 @@ via the settings POST.
 | `exclude_filter` | string | no |  | Drop log lines matching this filter. |
 | `use_regex` | boolean | no |  | Treat the filters as regular expressions. |
 | `ignore_case` | boolean | no |  | Match the filters case-insensitively. |
-
-### Movie Scores
-
-| Field | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `hash` | integer | no |  | Points for a release-hash match (exact file match). |
-| `title` | integer | no |  | Points for a matching title. |
-| `year` | integer | no |  | Points for a matching year. |
-| `release_group` | integer | no |  | Points for a matching release group. |
-| `source` | integer | no |  | Points for a matching source (BluRay, WEB-DL, …). |
-| `resolution` | integer | no |  | Points for a matching resolution. |
-| `video_codec` | integer | no |  | Points for a matching video codec. |
-| `audio_codec` | integer | no |  | Points for a matching audio codec. |
-| `edition` | integer | no |  | Points for a matching edition. |
-| `streaming_service` | integer | no |  | Points for a matching streaming service. |
-| `hearing_impaired` | integer | no |  | Points for a matching hearing-impaired flag. |
-
-### Series Scores
-
-| Field | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `hash` | integer | no |  | Points for a release-hash match (exact file match). |
-| `series` | integer | no |  | Points for a matching series title. |
-| `year` | integer | no |  | Points for a matching year. |
-| `season` | integer | no |  | Points for a matching season number. |
-| `episode` | integer | no |  | Points for a matching episode number. |
-| `release_group` | integer | no |  | Points for a matching release group. |
-| `source` | integer | no |  | Points for a matching source (BluRay, WEB-DL, …). |
-| `resolution` | integer | no |  | Points for a matching resolution. |
-| `video_codec` | integer | no |  | Points for a matching video codec. |
-| `audio_codec` | integer | no |  | Points for a matching audio codec. |
-| `streaming_service` | integer | no |  | Points for a matching streaming service. |
-| `hearing_impaired` | integer | no |  | Points for a matching hearing-impaired flag. |
 
 ### Addic7ed
 

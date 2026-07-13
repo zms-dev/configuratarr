@@ -14,11 +14,15 @@ use crate::resources::provider::Provider;
 /// Composes the shared provider envelope (id, name, tags, read-only metadata)
 /// with a per-implementation typed fields-blob and the envelope-level flags
 /// that apply to every client type.
+// Create/update use `?forceSave=true`: the API otherwise runs a live connectivity
+// test against the remote service on save and rejects with HTTP 400 when it is
+// unreachable from this host or rate-limiting. A declarative sync must converge to
+// the desired config regardless; the app still surfaces the failing health check.
 #[resource(
     sync = crud,
     list = get("/api/v1/downloadclient"),
-    create = post("/api/v1/downloadclient"),
-    update = put("/api/v1/downloadclient/${self.id}"),
+    create = post("/api/v1/downloadclient?forceSave=true"),
+    update = put("/api/v1/downloadclient/${self.id}?forceSave=true"),
     delete = delete("/api/v1/downloadclient/${self.id}"),
 )]
 pub struct DownloadClient {

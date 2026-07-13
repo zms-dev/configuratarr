@@ -9,11 +9,15 @@ use crate::resources::download_clients::DownloadClientProvider;
 use crate::resources::download_protocol::DownloadProtocol;
 use crate::resources::provider::Provider;
 
+// Create/update use `?forceSave=true`: the API otherwise runs a live connectivity
+// test against the remote service on save and rejects with HTTP 400 when it is
+// unreachable from this host or rate-limiting. A declarative sync must converge to
+// the desired config regardless; the app still surfaces the failing health check.
 #[resource(
     sync = crud,
     list = get("/api/v3/downloadclient"),
-    create = post("/api/v3/downloadclient"),
-    update = put("/api/v3/downloadclient/${self.id}"),
+    create = post("/api/v3/downloadclient?forceSave=true"),
+    update = put("/api/v3/downloadclient/${self.id}?forceSave=true"),
     delete = delete("/api/v3/downloadclient/${self.id}"),
 )]
 pub struct DownloadClient {
