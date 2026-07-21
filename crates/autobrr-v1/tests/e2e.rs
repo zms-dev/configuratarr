@@ -824,6 +824,37 @@ async fn irc_network_create_update_idempotent() {
         settled.unchanged, 1,
         "update settles to unchanged: {settled:?}"
     );
+
+    // The channel must be stored *enabled* even though the config didn't say so:
+    // autobrr's channel struct decodes an absent `enabled` as `false`, and since
+    // 1.82 a disabled channel is skipped by the join workflow (no announces).
+    // Read the stored network — the `GET /api/irc` list reports handler state,
+    // not the rows.
+    let (svc, _) = instance::<AutobrrV1>(&url, &key, json!({}));
+    let client = core_lib::apply::connect(&svc.connection())
+        .await
+        .expect("connect");
+    let networks: Vec<Value> = client.get("/api/irc").await.expect("list networks");
+    let id = networks
+        .iter()
+        .find(|n| n.get("name").and_then(Value::as_str) == Some("cfg-e2e-net"))
+        .and_then(|n| n.get("id"))
+        .expect("network present")
+        .clone();
+    let stored: Value = client
+        .get(&format!("/api/irc/network/{id}"))
+        .await
+        .expect("get network");
+    let channel = stored
+        .get("channels")
+        .and_then(Value::as_array)
+        .and_then(|c| c.first())
+        .expect("channel stored");
+    assert_eq!(
+        channel.get("enabled"),
+        Some(&Value::Bool(true)),
+        "channel stored enabled: {channel:?}"
+    );
 }
 
 /// Create-only notification of the newly-added `WEBHOOK` type, subscribed to the

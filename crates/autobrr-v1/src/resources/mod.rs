@@ -35,6 +35,7 @@ pub mod proxy;
 pub mod action;
 pub mod external_filter;
 pub mod feed;
+pub mod feed_settings;
 pub mod filter;
 pub mod filter_indexer;
 pub mod indexer;

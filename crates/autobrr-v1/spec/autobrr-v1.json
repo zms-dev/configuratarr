@@ -3,7 +3,7 @@
   "info": {
     "title": "autobrr",
     "version": "v1",
-    "description": "autobrr API \u2014 path surface verified against autobrr v1.75.1 source (github.com/autobrr/autobrr, internal/http). Paths are relative to the /api server base."
+    "description": "autobrr API \u2014 path surface verified against autobrr v1.82.1 source (github.com/autobrr/autobrr, internal/http). Paths are relative to the /api server base."
   },
   "servers": [
     {
@@ -493,6 +493,9 @@
           },
           "type": {
             "type": "string"
+          },
+          "identifier_external": {
+            "type": "string"
           }
         }
       },
@@ -569,6 +572,9 @@
           },
           "tls_skip_verify": {
             "type": "boolean"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/FeedSettings"
           }
         }
       },
@@ -930,6 +936,12 @@
           },
           "headers": {
             "type": "string"
+          },
+          "event_sounds": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
           }
         }
       },
@@ -1098,6 +1110,19 @@
           },
           "skip_clean_sanitize": {
             "type": "boolean"
+          }
+        }
+      },
+      "FeedSettings": {
+        "type": "object",
+        "properties": {
+          "download_type": {
+            "type": "string",
+            "enum": [
+              "TORRENT",
+              "MAGNET",
+              "NZB"
+            ]
           }
         }
       }
@@ -2552,6 +2577,35 @@
         "responses": {
           "200": {
             "description": "Process an announce"
+          }
+        }
+      }
+    },
+    "/irc/network/{networkID}/channel/{channel}/history": {
+      "get": {
+        "operationId": "get_irc_network__networkID__channel__channel__history",
+        "summary": "Get an IRC channel's message history",
+        "parameters": [
+          {
+            "name": "networkID",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "channel",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Get an IRC channel's message history"
           }
         }
       }

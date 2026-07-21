@@ -49,6 +49,7 @@ Autobrr v1 — desired-state config for one instance.
 | `sound` | string | no |  | Notification sound (Pushover / ntfy). |
 | `method` | string | no |  | HTTP method (generic webhook providers). |
 | `headers` | string | no |  | Extra headers (generic webhook providers). |
+| `event_sounds` | any | no |  | Per-event sound overrides as an `EVENT: sound` map (Pushover / ntfy), e.g. `{ PUSH_APPROVED: "magic", PUSH_REJECTED: "falling" }`. Overrides `sound` for the listed events only. |
 
 ### Proxy
 
@@ -90,6 +91,7 @@ Autobrr v1 — desired-state config for one instance.
 | `name` | string | yes |  | Display name — its identity (`${ref.indexer.<name>}`). |
 | `identifier` | string | yes |  | Definition id to instantiate (e.g. `torznab`, `beyond-hd`). Sent verbatim on create; autobrr namespaces the stored value per instance. |
 | `implementation` | string | yes |  | Definition implementation: `torznab`, `newznab`, `rss`, or `irc`. |
+| `identifier_external` | string | no |  | Alternate identifier autobrr matches announces against, where the tracker announces under a different name than the definition id. |
 | `base_url` | string | no |  | Tracker base URL. **Required for `irc` indexers** — autobrr rejects an empty `base_url` there (`indexer baseURL must not be empty`); it maps the indexer into the IRC announce handler by it. A top-level field, not a `settings` entry. |
 | `enabled` | boolean | no | `true` | Whether the indexer is active. |
 | `use_proxy` | boolean | no |  | Route this indexer's HTTP through a proxy. |
@@ -271,6 +273,7 @@ Autobrr v1 — desired-state config for one instance.
 | `api_key` | secret string | no |  | API key for the feed source, where required. Credential — redacted in plan output. |
 | `cookie` | secret string | no |  | Cookie to send with feed requests (private trackers). Credential — redacted in plan output. |
 | `tls_skip_verify` | boolean | no |  | Skip TLS certificate verification. |
+| `settings` | [`feed_settings`](#feed-settings) | no |  | Feed settings blob (currently just `download_type`). |
 
 ## Types
 
@@ -303,6 +306,7 @@ Allowed values: `PUSH_APPROVED` / `PUSH_REJECTED` / `PUSH_ERROR` / `IRC_DISCONNE
 |---|---|---|---|---|
 | `name` | string | yes |  | Channel name (e.g. `#announce`). |
 | `password` | secret string | no |  | Channel key/password, where the channel is protected (write-only). Credential — redacted in plan output. |
+| `enabled` | boolean | no | `true` | Whether autobrr joins this channel. Must always be written: autobrr's channel struct decodes an absent `enabled` key as `false`, and its join workflow skips disabled channels — so omitting it silently stops announces. Non-optional with a `true` default for that reason. |
 
 ### Filter Indexer
 
@@ -379,6 +383,12 @@ Allowed values: `PUSH_APPROVED` / `PUSH_REJECTED` / `PUSH_ERROR` / `IRC_DISCONNE
 |---|---|---|---|---|
 | `id` | integer | no |  | Server filter id — attach a managed filter via `${ref.filter.<name>}`. References a [`filter`](#filter) by name (`${ref.filter.<key>}`). |
 | `name` | string | no |  | Filter display name (read-only; autobrr fills it). |
+
+### Feed Settings
+
+| Field | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `download_type` | string | no |  | What to hand the download client for each item: `TORRENT` (default), `MAGNET`, or `NZB` (autobrr 1.76+, for usenet RSS feeds). |
 
 ### Download Client Basic
 

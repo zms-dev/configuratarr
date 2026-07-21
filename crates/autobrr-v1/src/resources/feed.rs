@@ -20,6 +20,7 @@ use core_macros::resource;
 use serde_json::Value;
 
 use crate::diff;
+use crate::resources::feed_settings::FeedSettings;
 
 /// `/api/feeds` — a configured feed.
 #[resource(sync = custom, case = snake, list = get("/api/feeds"))]
@@ -54,6 +55,8 @@ pub struct Feed {
     pub cookie: Option<SecretValue>,
     /// Skip TLS certificate verification.
     pub tls_skip_verify: Option<bool>,
+    /// Feed settings blob (currently just `download_type`).
+    pub settings: Option<FeedSettings>,
 }
 
 /// autobrr echoes the FK only nested (`indexer.id`), never as a top-level

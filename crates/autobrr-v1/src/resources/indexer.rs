@@ -13,7 +13,8 @@
 //!
 //! So this hook creates by name (base identifier), and on re-apply PUTs the full
 //! config back using the *live* identifier + re-sent settings. Idempotency is
-//! judged on the readable fields (`enabled`, `implementation`, `base_url`); a
+//! judged on the readable fields (`enabled`, `implementation`, `base_url`,
+//! `identifier_external`); a
 //! settings-only edit can't be detected (the values aren't readable) and is
 //! always re-sent on an update triggered by another change. Under `--prune`,
 //! indexers the config no longer declares are deleted via
@@ -37,6 +38,9 @@ pub struct Indexer {
     pub identifier: String,
     /// Definition implementation: `torznab`, `newznab`, `rss`, or `irc`.
     pub implementation: String,
+    /// Alternate identifier autobrr matches announces against, where the tracker
+    /// announces under a different name than the definition id.
+    pub identifier_external: Option<String>,
     /// Tracker base URL. **Required for `irc` indexers** — autobrr rejects an
     /// empty `base_url` there (`indexer baseURL must not be empty`); it maps the
     /// indexer into the IRC announce handler by it. A top-level field, not a
@@ -65,7 +69,14 @@ fn readable_matches(wire: &Value, live: &Value) -> bool {
     // Coalesce absent/null: an unset `base_url` is omitted on encode but read back
     // as `null`, and the two must compare equal (else torznab indexers churn).
     let eq = |k: &str| wire.get(k).unwrap_or(&Value::Null) == live.get(k).unwrap_or(&Value::Null);
-    eq("enabled") && eq("implementation") && eq("base_url")
+    // Declared-only: autobrr reads an unset `identifier_external` back as `""`
+    // (plain Go string, no `omitempty`), which encode omits entirely — comparing
+    // those directly would churn every indexer that doesn't declare one.
+    let declared_eq = |k: &str| match wire.get(k) {
+        None | Some(Value::Null) => true,
+        Some(w) => Some(w) == live.get(k),
+    };
+    eq("enabled") && eq("implementation") && eq("base_url") && declared_eq("identifier_external")
 }
 
 impl CustomSync for Indexer {

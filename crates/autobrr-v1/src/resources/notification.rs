@@ -12,7 +12,7 @@
 
 use core_lib::engine;
 use core_lib::reconcile;
-use core_lib::{CustomSync, CustomSyncFuture, HttpClient, RefStore, SecretValue};
+use core_lib::{CustomSync, CustomSyncFuture, HttpClient, Json, RefStore, SecretValue};
 use core_macros::resource;
 use serde_json::Value;
 
@@ -71,6 +71,10 @@ pub struct Notification {
     pub method: Option<String>,
     /// Extra headers (generic webhook providers).
     pub headers: Option<String>,
+    /// Per-event sound overrides as an `EVENT: sound` map (Pushover / ntfy),
+    /// e.g. `{ PUSH_APPROVED: "magic", PUSH_REJECTED: "falling" }`. Overrides
+    /// `sound` for the listed events only.
+    pub event_sounds: Option<Json>,
 }
 
 impl CustomSync for Notification {
