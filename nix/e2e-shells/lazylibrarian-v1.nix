@@ -6,7 +6,11 @@
 #
 # Best-effort: if it fails to start, check the log path printed below (likely a
 # missing Python dependency — add it to `pyEnv`).
-{ pkgs, e2eShell }:
+{
+  pkgs,
+  e2eShell,
+  common,
+}:
 let
   lazylibrarian =
     let
@@ -80,6 +84,7 @@ pkgs.mkShell {
   ];
   shellHook = ''
     echo "=== Configuratarr E2E DevShell (lazylibrarian-v1) ==="
+    ${common}
 
     _LL_DATA=$(mktemp -d -t configuratarr-lazylibrarian-XXXXXX)
     cat > "$_LL_DATA/config.ini" <<'EOF'
@@ -91,6 +96,10 @@ pkgs.mkShell {
     api_enabled = 1
     api_key = configuratarre2e0000000000000000
     EOF
+
+    if ! e2e_reclaim_port 5299 LazyLibrarian; then
+      return 2>/dev/null || exit 1
+    fi
 
     echo "  starting lazylibrarian..."
     # LazyLibrarian self-restarts once on first run (the launcher normally

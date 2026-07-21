@@ -7,7 +7,11 @@
 # the API after onboarding. The mint returns exactly one key on a fresh (temp)
 # data dir; `head -n1` guards against ever handing a multi-line value to an HTTP
 # header (the trap that bit jellyfin-v11).
-{ pkgs, e2eShell }:
+{
+  pkgs,
+  e2eShell,
+  common,
+}:
 pkgs.mkShell {
   inputsFrom = [ e2eShell ];
   packages = [
@@ -17,6 +21,7 @@ pkgs.mkShell {
   ];
   shellHook = ''
     echo "=== Configuratarr E2E DevShell (autobrr-v1) ==="
+    ${common}
 
     _AB_DATA=$(mktemp -d -t configuratarr-autobrr-XXXXXX)
     cat > "$_AB_DATA/config.toml" <<'EOF'
@@ -26,6 +31,10 @@ pkgs.mkShell {
     checkForUpdates = false
     logLevel = "ERROR"
     EOF
+
+    if ! e2e_reclaim_port 7474 autobrr; then
+      return 2>/dev/null || exit 1
+    fi
 
     echo "  starting autobrr..."
     autobrr --config "$_AB_DATA" > "$_AB_DATA/autobrr.log" 2>&1 &
@@ -51,13 +60,20 @@ pkgs.mkShell {
         -d '{"username":"admin","password":"configuratarre2e"}' > /dev/null
       _AB_KEY=$(curl -sf -b "$_AB_CJ" -X POST http://localhost:7474/api/keys \
         -H 'Content-Type: application/json' \
-        -d '{"name":"configuratarr","scopes":[]}' | jq -r '.key' | head -n1)
+        -d '{"name":"configuratarr","scopes":[]}' | jq -r '.key // empty' | head -n1)
 
-      export AUTOBRR_URL="http://localhost:7474"
-      export AUTOBRR_API_KEY="$_AB_KEY"
-      echo "  autobrr ready — $AUTOBRR_URL"
-      echo ""
-      echo "  cargo nextest run -p autobrr-v1 --run-ignored all -j1"
+      # Onboard/login/mint each fail quietly under `-sf … > /dev/null`; an empty
+      # key then reaches the suite as a puzzling 401 rather than a setup error.
+      if e2e_require "AUTOBRR_API_KEY" "$_AB_KEY"; then
+        export AUTOBRR_URL="http://localhost:7474"
+        export AUTOBRR_API_KEY="$_AB_KEY"
+        echo "  autobrr ready — $AUTOBRR_URL"
+        echo ""
+        echo "  cargo nextest run -p autobrr-v1 --run-ignored all -j1"
+      else
+        echo "  autobrr onboarding failed — check $_AB_DATA/autobrr.log"
+        kill "$_AB_PID" 2>/dev/null
+      fi
     else
       echo "  autobrr failed to start — check $_AB_DATA/autobrr.log"
       kill "$_AB_PID" 2>/dev/null

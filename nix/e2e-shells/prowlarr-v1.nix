@@ -1,11 +1,16 @@
 # Local e2e dev shell for prowlarr-v1.
 # Starts Prowlarr with a known API key, exports PROWLARR_URL + PROWLARR_API_KEY,
 # kills it and cleans up on exit.
-{ pkgs, e2eShell }:
+{
+  pkgs,
+  e2eShell,
+  common,
+}:
 pkgs.mkShell {
   inputsFrom = [ e2eShell ];
   shellHook = ''
     echo "=== Configuratarr E2E DevShell (prowlarr-v1) ==="
+    ${common}
 
     _PROWLARR_DATA=$(mktemp -d -t configuratarr-prowlarr-XXXXXX)
     _PROWLARR_API_KEY="configuratarre2etestkey000000000"
@@ -21,6 +26,10 @@ pkgs.mkShell {
       <AnalyticsEnabled>False</AnalyticsEnabled>
     </Config>
     EOF
+
+    if ! e2e_reclaim_port 9696 Prowlarr; then
+      return 2>/dev/null || exit 1
+    fi
 
     echo "  starting Prowlarr..."
     HOME="$_PROWLARR_DATA" Prowlarr -nobrowser -data="$_PROWLARR_DATA" > "$_PROWLARR_DATA/prowlarr.log" 2>&1 &

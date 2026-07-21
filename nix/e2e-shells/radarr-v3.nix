@@ -1,11 +1,16 @@
 # Local e2e dev shell for radarr-v3.
 # Starts Radarr with a known API key, exports RADARR_URL + RADARR_API_KEY,
 # kills it and cleans up on exit.
-{ pkgs, e2eShell }:
+{
+  pkgs,
+  e2eShell,
+  common,
+}:
 pkgs.mkShell {
   inputsFrom = [ e2eShell ];
   shellHook = ''
     echo "=== Configuratarr E2E DevShell (radarr-v3) ==="
+    ${common}
 
     _RADARR_DATA=$(mktemp -d -t configuratarr-radarr-XXXXXX)
     _RADARR_API_KEY="configuratarre2etestkey000000000"
@@ -20,6 +25,10 @@ pkgs.mkShell {
       <AnalyticsEnabled>False</AnalyticsEnabled>
     </Config>
     EOF
+
+    if ! e2e_reclaim_port 7878 Radarr; then
+      return 2>/dev/null || exit 1
+    fi
 
     echo "  starting Radarr..."
     Radarr -nobrowser -data="$_RADARR_DATA" > "$_RADARR_DATA/radarr.log" 2>&1 &

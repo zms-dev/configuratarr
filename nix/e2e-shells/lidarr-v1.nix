@@ -1,11 +1,16 @@
 # Local e2e dev shell for lidarr-v1.
 # Starts Lidarr with a known API key, exports LIDARR_URL + LIDARR_API_KEY,
 # kills it and cleans up on exit.
-{ pkgs, e2eShell }:
+{
+  pkgs,
+  e2eShell,
+  common,
+}:
 pkgs.mkShell {
   inputsFrom = [ e2eShell ];
   shellHook = ''
     echo "=== Configuratarr E2E DevShell (lidarr-v1) ==="
+    ${common}
 
     _LIDARR_DATA=$(mktemp -d -t configuratarr-lidarr-XXXXXX)
     _LIDARR_API_KEY="configuratarre2etestkey000000000"
@@ -21,6 +26,10 @@ pkgs.mkShell {
       <AnalyticsEnabled>False</AnalyticsEnabled>
     </Config>
     EOF
+
+    if ! e2e_reclaim_port 8686 Lidarr; then
+      return 2>/dev/null || exit 1
+    fi
 
     echo "  starting Lidarr..."
     HOME="$_LIDARR_DATA" Lidarr -nobrowser -data="$_LIDARR_DATA/.config/Lidarr" > "$_LIDARR_DATA/lidarr.log" 2>&1 &
