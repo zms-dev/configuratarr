@@ -44,7 +44,14 @@ pkgs.testers.nixosTest {
     # `/System/Info/Public` answers while Kestrel is up but Jellyfin may still be
     # running DB migrations, during which the startup-wizard controller 500s —
     # so poll the first startup call until it's actually ready.
-    machine.wait_until_succeeds(f"curl -sf http://localhost:8096/Startup/Configuration -H '{auth}'", timeout=120)
+    #
+    # 300s, not 120s: on a slow CI runner Jellyfin spends ~65s in "Update Plugins"
+    # failing to reach the plugin manifest (the test VM has no network) and then
+    # ~85s probing ffmpeg codecs before this controller answers. 120s left no
+    # margin and this timed out intermittently while passing locally and on
+    # re-runs. `wait_until_succeeds` returns as soon as the call works, so a
+    # larger budget costs nothing when the machine is fast.
+    machine.wait_until_succeeds(f"curl -sf http://localhost:8096/Startup/Configuration -H '{auth}'", timeout=300)
 
     # Complete the startup wizard. The steps must run in order — POSTing the
     # admin user before priming the config/user GETs 404s.
@@ -95,7 +102,7 @@ pkgs.testers.nixosTest {
       "for _ in 1 2 3; do "
       f"curl -sf http://localhost:8096/System/Info -H 'X-Emby-Token: {api_key}' >/dev/null "
       "|| exit 1; sleep 1; done",
-      timeout=120,
+      timeout=300,
     )
 
     machine.succeed(
