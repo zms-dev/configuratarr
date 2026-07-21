@@ -55,7 +55,7 @@ serde-saphyr       = "0.0.29"
 secrecy            = { version = "0.10.3", features = ["serde"] }
 zeroize            = "1.8"
 base64             = "0.22"
-md-5               = "0.10"
+md-5               = "0.11"
 owo-colors         = { version = "4.3.0", features = ["supports-colors"] }
 tracing            = "0.1"
 tracing-subscriber = "0.3"
