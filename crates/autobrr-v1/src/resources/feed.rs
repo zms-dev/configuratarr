@@ -3,10 +3,11 @@
 //! and the feed carries an `indexer_id` back to its parent indexer.
 //!
 //! `sync = custom`, keyed by `name`, create + update by id (`POST /api/feeds`,
-//! `PUT /api/feeds/{id}`); no prune — matching the other autobrr resources.
-//! `api_key`/`cookie` are redacted on read, so idempotency is the structural-subset
-//! test on the readable fields ([`crate::diff::subset`]); the create/update
-//! skeleton is [`core_lib::reconcile::upsert`].
+//! `PUT /api/feeds/{id}`), and `--prune` deletes feeds the config no longer
+//! declares via `DELETE /api/feeds/{id}`. `api_key`/`cookie` are redacted on
+//! read, so idempotency is the structural-subset test on the readable fields
+//! ([`crate::diff::subset`]); the create/update/prune skeleton is
+//! [`core_lib::reconcile::upsert_prune`].
 //!
 //! FK: `indexer_id` → the managed feed-type indexer this feed polls
 //! (`${ref.indexer.<name>}`). A feed is meaningless without its indexer, so
@@ -19,6 +20,7 @@ use core_macros::resource;
 use serde_json::Value;
 
 use crate::diff;
+use crate::resources::feed_settings::FeedSettings;
 
 /// `/api/feeds` — a configured feed.
 #[resource(sync = custom, case = snake, list = get("/api/feeds"))]
@@ -53,6 +55,8 @@ pub struct Feed {
     pub cookie: Option<SecretValue>,
     /// Skip TLS certificate verification.
     pub tls_skip_verify: Option<bool>,
+    /// Feed settings blob (currently just `download_type`).
+    pub settings: Option<FeedSettings>,
 }
 
 /// autobrr echoes the FK only nested (`indexer.id`), never as a top-level
@@ -74,6 +78,7 @@ impl CustomSync for Feed {
         client: &'a HttpClient,
         desired: &'a [Value],
         _refs: &'a mut RefStore,
+        prune: bool,
         execute: bool,
     ) -> CustomSyncFuture<'a> {
         Box::pin(async move {
@@ -84,11 +89,12 @@ impl CustomSync for Feed {
                 .map(engine::encode_config::<Self>)
                 .collect::<anyhow::Result<_>>()?;
 
-            reconcile::upsert(
+            reconcile::upsert_prune(
                 &wire,
                 &live,
                 "name",
                 |w, l| diff::subset(w, &lift_indexer_id(l)),
+                prune,
                 execute,
                 |w| {
                     let client = client.clone();
@@ -102,6 +108,14 @@ impl CustomSync for Feed {
                     let id = l.get("id").cloned().unwrap_or(Value::Null);
                     async move {
                         let _: Value = client.put(&format!("/api/feeds/{id}"), &w).await?;
+                        Ok(())
+                    }
+                },
+                |l| {
+                    let client = client.clone();
+                    let id = l.get("id").cloned().unwrap_or(Value::Null);
+                    async move {
+                        client.delete(&format!("/api/feeds/{id}")).await?;
                         Ok(())
                     }
                 },

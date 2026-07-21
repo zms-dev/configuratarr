@@ -1,7 +1,6 @@
-//! Direct / generic providers (`GEN_<n>` config sections). Listed under
-//! `direct` by `listProviders`; create-only by `DISPNAME` via
-//! `addProvider&type=gen` — `changeProvider` can't match them by display name.
-//! See [`super`].
+//! Direct / generic providers (`GEN_<n>` config sections). Listed under `direct`
+//! by `listProviders`; upsert by `DISPNAME` (stub `addProvider&type=gen` +
+//! `changeProvider` by internal `NAME`). See [`super`].
 
 use core_lib::{CustomSync, CustomSyncFuture, HttpClient, RefStore};
 use core_macros::resource;
@@ -36,10 +35,11 @@ impl CustomSync for GenProvider {
         client: &'a HttpClient,
         desired: &'a [Value],
         _refs: &'a mut RefStore,
+        _prune: bool,
         execute: bool,
     ) -> CustomSyncFuture<'a> {
         Box::pin(async move {
-            super::reconcile_encoded::<Self>(client, desired, execute, "direct", "gen", false).await
+            super::reconcile_encoded::<Self>(client, desired, execute, "direct", "gen").await
         })
     }
 }

@@ -8,12 +8,16 @@
 //! config as a **structural subset** of live (extra server fields ignored) and
 //! only writes on real drift.
 //!
+//! Live state is read per network from `GET /api/irc/network/{id}`, not from the
+//! `GET /api/irc` list — the list is a health view whose `channels[]` comes from
+//! the running IRC handler (see [`CustomSync::reconcile`]).
+//!
 //! Write paths are irregular: create is `POST /api/irc`, update is
-//! `PUT /api/irc/network/{id}` (a bare `/api/irc/{id}` 404s). No prune (the custom
-//! seam carries no `prune` flag; deleting a network you didn't author would be
-//! surprising — remove it in autobrr). Credentials (`pass`, `auth.password`,
-//! channel keys) are write-only — returned `<redacted>`, so a declared value
-//! reads as drift and re-applies as an update.
+//! `PUT /api/irc/network/{id}`, delete is `DELETE /api/irc/network/{id}` (a bare
+//! `/api/irc/{id}` 404s). Under `--prune`, networks the config no longer declares
+//! are deleted ([`core_lib::reconcile::upsert_prune`]). Credentials (`pass`,
+//! `auth.password`, channel keys) are write-only — returned `<redacted>`, so a
+//! declared value reads as drift and re-applies as an update.
 
 use core_lib::{
     CustomSync, CustomSyncFuture, HttpClient, RefStore, SecretValue, engine, reconcile,
@@ -81,21 +85,36 @@ impl CustomSync for IrcNetwork {
         client: &'a HttpClient,
         desired: &'a [Value],
         _refs: &'a mut RefStore,
+        prune: bool,
         execute: bool,
     ) -> CustomSyncFuture<'a> {
         Box::pin(async move {
-            let live: Vec<Value> = client.get("/api/irc").await?;
+            let listed: Vec<Value> = client.get("/api/irc").await?;
+            // `GET /api/irc` is a *health* view: since autobrr 1.82 it builds an
+            // enabled network's `channels[]` from the running IRC handler's
+            // in-memory set, not the database — so a network that isn't connected
+            // (or whose handler hasn't seeded yet) reports `channels: []` even
+            // though the rows exist. Diffing against that would see the declared
+            // channels as missing on every apply and PUT forever, and each PUT
+            // deletes and re-inserts the channel rows. `GET /api/irc/network/{id}`
+            // returns the stored network, so re-read each one for the diff.
+            let mut live: Vec<Value> = Vec::with_capacity(listed.len());
+            for l in &listed {
+                let id = l.get("id").cloned().unwrap_or(Value::Null);
+                live.push(client.get(&format!("/api/irc/network/{id}")).await?);
+            }
             // Full desired wire (read-only runtime fields omitted by encode).
             let wire: Vec<Value> = desired
                 .iter()
                 .map(engine::encode_config::<Self>)
                 .collect::<anyhow::Result<_>>()?;
 
-            reconcile::upsert(
+            reconcile::upsert_prune(
                 &wire,
                 &live,
                 "name",
                 diff::subset,
+                prune,
                 execute,
                 |w| {
                     let client = client.clone();
@@ -117,8 +136,45 @@ impl CustomSync for IrcNetwork {
                         Ok(())
                     }
                 },
+                |l| {
+                    let client = client.clone();
+                    let id = l.get("id").cloned().unwrap_or(Value::Null);
+                    // Delete shares the irregular network path.
+                    async move {
+                        client.delete(&format!("/api/irc/network/{id}")).await?;
+                        Ok(())
+                    }
+                },
             )
             .await
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    /// Every channel carries `enabled` on the wire, declared or not: autobrr's
+    /// channel struct has a plain `bool`, so an absent key decodes to `false`
+    /// and its join workflow then skips the channel. A bare channel must
+    /// therefore encode `enabled: true` from the field default.
+    #[test]
+    fn channels_always_encode_enabled() {
+        let cfg = json!({
+            "name": "tl",
+            "enabled": true,
+            "server": "irc.example.org",
+            "port": 6697,
+            "nick": "mybot",
+            "channels": [
+                { "name": "#announce" },
+                { "name": "#offtopic", "enabled": false },
+            ],
+        });
+        let wire = engine::encode_config::<IrcNetwork>(&cfg).unwrap();
+        assert_eq!(wire["channels"][0]["enabled"], json!(true));
+        assert_eq!(wire["channels"][1]["enabled"], json!(false));
     }
 }

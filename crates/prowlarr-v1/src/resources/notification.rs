@@ -4,11 +4,15 @@ use crate::resources::notifications::NotificationProvider;
 use crate::resources::provider::Provider;
 
 /// A Prowlarr notification connection — routes indexer/health/update events to external services.
+// Create/update use `?forceSave=true`: the API otherwise runs a live connectivity
+// test against the remote service on save and rejects with HTTP 400 when it is
+// unreachable from this host or rate-limiting. A declarative sync must converge to
+// the desired config regardless; the app still surfaces the failing health check.
 #[resource(
     sync = crud,
     list = get("/api/v1/notification"),
-    create = post("/api/v1/notification"),
-    update = put("/api/v1/notification/${self.id}"),
+    create = post("/api/v1/notification?forceSave=true"),
+    update = put("/api/v1/notification/${self.id}?forceSave=true"),
     delete = delete("/api/v1/notification/${self.id}"),
 )]
 pub struct Notification {

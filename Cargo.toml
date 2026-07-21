@@ -60,8 +60,13 @@ owo-colors         = { version = "4.3.0", features = ["supports-colors"] }
 tracing            = "0.1"
 tracing-subscriber = "0.3"
 wiremock           = "0.6"
-jsonschema         = { version = "0.46", default-features = false }
+jsonschema         = { version = "0.48", default-features = false }
 clap               = { version = "4.5", features = ["derive", "env"] }
+# Held at 2 to match darling, which still requires syn ^2.0.15 as of 0.23.
+# core-macros converts syn::Error into darling::Error, and that `From` impl only
+# exists for the syn major darling itself builds against — so a syn 3 workspace
+# fails to compile. Bump once darling releases syn 3 support (see the matching
+# dependabot ignore).
 syn                = { version = "2", features = ["full"] }
 quote              = "1"
 darling            = "0.23"

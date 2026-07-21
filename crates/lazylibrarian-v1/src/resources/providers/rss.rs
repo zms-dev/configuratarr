@@ -1,6 +1,5 @@
-//! RSS / wishlist providers (`RSS_<n>` config sections). Create-only by
-//! `DISPNAME` via `addProvider&type=rss` — LazyLibrarian's `changeProvider` can't
-//! match rss providers by display name, so they aren't updated. See [`super`].
+//! RSS / wishlist providers (`RSS_<n>` config sections). Upsert by `DISPNAME`
+//! (stub `addProvider` + `changeProvider` by internal `NAME`). See [`super`].
 
 use core_lib::{CustomSync, CustomSyncFuture, HttpClient, RefStore};
 use core_macros::resource;
@@ -35,10 +34,11 @@ impl CustomSync for RssProvider {
         client: &'a HttpClient,
         desired: &'a [Value],
         _refs: &'a mut RefStore,
+        _prune: bool,
         execute: bool,
     ) -> CustomSyncFuture<'a> {
         Box::pin(async move {
-            super::reconcile_encoded::<Self>(client, desired, execute, "rss", "rss", false).await
+            super::reconcile_encoded::<Self>(client, desired, execute, "rss", "rss").await
         })
     }
 }

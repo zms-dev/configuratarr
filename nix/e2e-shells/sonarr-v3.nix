@@ -1,11 +1,16 @@
 # Local e2e dev shell for sonarr-v3.
 # Starts Sonarr with a known API key, exports SONARR_URL + SONARR_API_KEY,
 # kills it and cleans up on exit.
-{ pkgs, e2eShell }:
+{
+  pkgs,
+  e2eShell,
+  common,
+}:
 pkgs.mkShell {
   inputsFrom = [ e2eShell ];
   shellHook = ''
     echo "=== Configuratarr E2E DevShell (sonarr-v3) ==="
+    ${common}
 
     _SONARR_DATA=$(mktemp -d -t configuratarr-sonarr-XXXXXX)
     _SONARR_API_KEY="configuratarre2etestkey000000000"
@@ -21,6 +26,10 @@ pkgs.mkShell {
       <AnalyticsEnabled>False</AnalyticsEnabled>
     </Config>
     EOF
+
+    if ! e2e_reclaim_port 8989 Sonarr; then
+      return 2>/dev/null || exit 1
+    fi
 
     echo "  starting Sonarr..."
     HOME="$_SONARR_DATA" Sonarr -nobrowser -data="$_SONARR_DATA/.config/NzbDrone" > "$_SONARR_DATA/sonarr.log" 2>&1 &

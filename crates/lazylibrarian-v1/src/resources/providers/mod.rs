@@ -2,24 +2,27 @@
 //!
 //! Each family is a config.ini array section (`Newznab_<n>`, `Torznab_<n>`,
 //! `RSS_<n>`, `IRC_<n>`, `GEN_<n>`), keyed by `DISPNAME`, listed via
-//! `listProviders` and created via `addProvider&type=…`. There are two write
-//! contracts (see [`reconcile_family`]): **newznab/torznab** support
-//! `changeProvider` name-matched updates → [`core_lib::reconcile::upsert`];
-//! **rss/irc/gen** cannot be updated by display name (`changeProvider` matches
-//! them only by internal `NAME`) → [`core_lib::reconcile::create_only`]. No prune
-//! (no `Change`-expressible delete). All `sync = custom`; every command is
-//! `GET /api?cmd=…`.
+//! `listProviders`. All families are full **upsert** (`sync = custom`): create if
+//! absent, update to match, no prune (no `Change`-expressible delete).
+//!
+//! Write path — `addProvider` is buggy: it drops `ENABLED` (raw assignment instead
+//! of `set_bool`), so a provider created with it lands **disabled** regardless of
+//! how the flag is passed. `changeProvider` sets fields correctly (`set_bool`). So
+//! every provider is written in two steps: first `addProvider` a **stub** (`type` +
+//! `name`=DISPNAME + host) just to create the config slot, then
+//! `changeProvider&name=<internal NAME>` with the full field set, including
+//! `ENABLED`. Matching the update by the provider's **internal `NAME`** (`RSS_0`,
+//! `Newznab_2`) rather than its DISPNAME is what makes this work for *every* family
+//! — a DISPNAME-matched `changeProvider` fails for rss/irc/gen (`Invalid parameter:
+//! name`). One apply lands a provider fully configured and enabled.
 //!
 //! Apprise providers (`APPRISE_<n>`) are **not** modelled: `addProvider` accepts
 //! only `newznab/torznab/rss/gen/irc` and `listProviders` returns no apprise array,
 //! so the API cannot manage them.
 
 use core_lib::apply::Change;
-use core_lib::reconcile;
-use core_lib::{HttpClient, engine};
+use core_lib::{Described, HttpClient, engine};
 use serde_json::Value;
-
-use core_lib::Described;
 
 pub mod direct;
 pub mod irc;
@@ -32,21 +35,10 @@ pub mod torznab;
 fn scalar(v: &Value) -> String {
     match v {
         Value::String(s) => s.clone(),
-        Value::Bool(b) => {
-            if *b {
-                "1".into()
-            } else {
-                "0".into()
-            }
-        }
+        Value::Bool(b) => (if *b { "1" } else { "0" }).into(),
         Value::Null => String::new(),
         other => other.to_string(),
     }
-}
-
-/// Whether `v` is a truthy JSON value (bool `true` or the int/string `1`).
-fn truthy(v: &Value) -> bool {
-    matches!(v, Value::Bool(true)) || v.as_i64() == Some(1) || v == &Value::String("1".into())
 }
 
 /// Compare a desired value against a live one as strings, tolerating
@@ -80,126 +72,148 @@ fn in_sync(wire: &Value, live: &Value) -> bool {
         .unwrap_or(false)
 }
 
-/// `addProvider&type=…&name=<DISPNAME>&<FIELD>=…` for one wire record.
-async fn add_provider(
-    client: &HttpClient,
-    add_type: &'static str,
-    wire: &Value,
-) -> anyhow::Result<()> {
-    let mut pairs: Vec<(String, String)> = vec![
+/// `addProvider` stub params — the minimum to create the slot: `type`, `name`
+/// (DISPNAME), and a host. `addProvider` requires a `HOST` (or `SERVER` for IRC)
+/// and drops everything else meaningfully, so the real values are set afterwards
+/// via `changeProvider`.
+fn stub_params(add_type: &str, wire: &Value) -> anyhow::Result<Vec<(String, String)>> {
+    let obj = wire
+        .as_object()
+        .ok_or_else(|| anyhow::anyhow!("provider wire is not an object"))?;
+    let dispname = obj
+        .get("DISPNAME")
+        .map(scalar)
+        .ok_or_else(|| anyhow::anyhow!("provider is missing DISPNAME"))?;
+    let (host_key, host_val) = obj
+        .get("HOST")
+        .map(|h| ("HOST", scalar(h)))
+        .or_else(|| obj.get("SERVER").map(|s| ("SERVER", scalar(s))))
+        .ok_or_else(|| anyhow::anyhow!("provider {dispname} needs HOST or SERVER to create"))?;
+    Ok(vec![
         ("cmd".into(), "addProvider".into()),
         ("type".into(), add_type.into()),
+        ("name".into(), dispname),
+        (host_key.into(), host_val),
+    ])
+}
+
+/// `changeProvider` params — matched by the provider's internal `NAME`, setting
+/// every managed field (incl. `ENABLED`, which `changeProvider` writes via
+/// `set_bool`). `DISPNAME` is the identity (already set on create) and is not
+/// re-sent.
+fn change_params(name: &str, wire: &Value) -> Vec<(String, String)> {
+    let mut pairs = vec![
+        ("cmd".into(), "changeProvider".into()),
+        ("name".into(), name.to_string()),
     ];
     if let Some(obj) = wire.as_object() {
         for (k, v) in obj {
-            match k.as_str() {
-                // DISPNAME is set via `name`; ENABLED via the lowercase `enabled`
-                // (== 'true') that addProvider special-cases.
-                "DISPNAME" => pairs.push(("name".into(), scalar(v))),
-                "ENABLED" => pairs.push((
-                    "enabled".into(),
-                    if truthy(v) {
-                        "true".into()
-                    } else {
-                        "false".into()
-                    },
-                )),
-                _ => pairs.push((k.clone(), scalar(v))),
+            if k == "DISPNAME" {
+                continue;
             }
+            pairs.push((k.clone(), scalar(v)));
         }
     }
+    pairs
+}
+
+/// The `[family]` array from `listProviders` (e.g. `newznab`, `direct`).
+async fn list_family(client: &HttpClient, family: &str) -> anyhow::Result<Vec<Value>> {
+    let all = crate::http::get(client, &[("cmd", "listProviders")]).await?;
+    Ok(all
+        .get(family)
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default())
+}
+
+/// Issue an `add`/`changeProvider` call and surface its JSON envelope result:
+/// these commands return `{Success, Data, Error}`, so a `Success: false` (e.g.
+/// `Missing parameter: HOST`) must become a real error, not a silent no-op.
+async fn call(client: &HttpClient, pairs: &[(String, String)]) -> anyhow::Result<()> {
     let refs: Vec<(&str, &str)> = pairs
         .iter()
         .map(|(k, v)| (k.as_str(), v.as_str()))
         .collect();
-    crate::http::get(client, &refs).await?;
+    let resp = crate::http::get(client, &refs).await?;
+    if resp.get("Success") == Some(&Value::Bool(false)) {
+        let msg = resp
+            .pointer("/Error/Message")
+            .and_then(Value::as_str)
+            .unwrap_or("request failed");
+        anyhow::bail!("lazylibrarian: {msg}");
+    }
     Ok(())
 }
 
-/// Shared reconcile for one provider family.
+/// Look up a provider's internal `NAME` by its `DISPNAME` in a live list.
+fn name_of<'a>(live: &'a [Value], dispname: &str) -> Option<&'a str> {
+    live.iter()
+        .find(|l| l.get("DISPNAME").and_then(Value::as_str) == Some(dispname))
+        .and_then(|l| l.get("NAME"))
+        .and_then(Value::as_str)
+}
+
+/// Upsert reconcile for one provider family.
 ///
-/// `family` is the key under `listProviders`' result (`"newznab"`, `"direct"`, …);
-/// `add_type` is the `addProvider&type=` value (`"newznab"`, `"gen"`, …). `desired`
-/// are wire-encoded records (UPPERCASE keys incl. `DISPNAME`).
-///
-/// `updatable` splits the two write contracts LazyLibrarian actually supports:
-/// * **newznab / torznab** (`updatable = true`) — `changeProvider` matches by
-///   `DISPNAME` + `providertype`, so this is a full create-or-**update** upsert.
-/// * **rss / irc / gen** (`updatable = false`) — `changeProvider` matches those
-///   only by their internal `NAME` (`RSS_0`), so a name-keyed update returns
-///   `Invalid parameter: name`. There is no way to update them by display name,
-///   so they are **create-only** (create if absent, else leave) — no churn.
+/// `family` is the key under `listProviders`' result; `add_type` is the
+/// `addProvider&type=` value. `desired` are wire-encoded records (UPPERCASE keys
+/// incl. `DISPNAME`). For each: unchanged if the live record already matches; else
+/// `changeProvider` (by internal NAME) to converge; a fresh one is `addProvider`'d
+/// as a stub first, then re-listed to learn its NAME. No prune.
 async fn reconcile_family(
     client: &HttpClient,
     desired: &[Value],
     execute: bool,
     family: &'static str,
     add_type: &'static str,
-    updatable: bool,
 ) -> anyhow::Result<Vec<Change>> {
-    let all = crate::http::get(client, &[("cmd", "listProviders")]).await?;
-    let live: Vec<Value> = all
-        .get(family)
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
+    let mut live = list_family(client, family).await?;
+    let mut changes = Vec::with_capacity(desired.len());
 
-    if !updatable {
-        // create-only by DISPNAME
-        let present = reconcile::present_keys(&live, "DISPNAME");
-        let client = client.clone();
-        return reconcile::create_only(desired, "DISPNAME", &present, execute, move |_k, wire| {
-            let client = client.clone();
-            async move { add_provider(&client, add_type, &wire).await }
-        })
-        .await;
-    }
+    for wire in desired {
+        let dispname = wire
+            .get("DISPNAME")
+            .and_then(Value::as_str)
+            .ok_or_else(|| anyhow::anyhow!("provider is missing DISPNAME"))?;
 
-    let client = client.clone();
-    reconcile::upsert(
-        desired,
-        &live,
-        "DISPNAME",
-        in_sync,
-        execute,
-        {
-            let client = client.clone();
-            move |wire: Value| {
-                let client = client.clone();
-                async move { add_provider(&client, add_type, &wire).await }
-            }
-        },
-        // update — changeProvider&providertype=…&name=<DISPNAME>&<FIELD>=…
-        {
-            let client = client.clone();
-            move |_live: &Value, wire: Value| {
-                let client = client.clone();
-                async move {
-                    let dispname = wire.get("DISPNAME").map(scalar).unwrap_or_default();
-                    let mut pairs: Vec<(String, String)> = vec![
-                        ("cmd".into(), "changeProvider".into()),
-                        ("providertype".into(), add_type.into()),
-                        ("name".into(), dispname),
-                    ];
-                    if let Some(obj) = wire.as_object() {
-                        for (k, v) in obj {
-                            if k == "DISPNAME" {
-                                continue; // identity, not a field to rewrite
-                            }
-                            pairs.push((k.clone(), scalar(v)));
-                        }
-                    }
-                    let refs: Vec<(&str, &str)> = pairs
-                        .iter()
-                        .map(|(k, v)| (k.as_str(), v.as_str()))
-                        .collect();
-                    crate::http::get(&client, &refs).await?;
-                    Ok(())
+        let existing = live
+            .iter()
+            .find(|l| l.get("DISPNAME").and_then(Value::as_str) == Some(dispname))
+            .cloned();
+
+        let change = match existing {
+            Some(l) if in_sync(wire, &l) => Change::unchanged(dispname),
+            Some(l) => {
+                if execute {
+                    let name = l.get("NAME").and_then(Value::as_str).ok_or_else(|| {
+                        anyhow::anyhow!("provider {dispname} has no internal NAME")
+                    })?;
+                    call(client, &change_params(name, wire)).await?;
                 }
+                Change::updated(dispname)
             }
-        },
-    )
-    .await
+            None => {
+                if execute {
+                    // 1) stub-create the slot, 2) re-list to learn its NAME,
+                    // 3) set every field (incl. ENABLED) via changeProvider.
+                    call(client, &stub_params(add_type, wire)?).await?;
+                    live = list_family(client, family).await?;
+                    let name = name_of(&live, dispname)
+                        .ok_or_else(|| {
+                            anyhow::anyhow!(
+                                "created provider {dispname} not found in listProviders"
+                            )
+                        })?
+                        .to_string();
+                    call(client, &change_params(&name, wire)).await?;
+                }
+                Change::created(dispname)
+            }
+        };
+        changes.push(change);
+    }
+    Ok(changes)
 }
 
 /// Encode a family's desired config items to wire form, then run the shared
@@ -210,13 +224,12 @@ async fn reconcile_encoded<T: Described>(
     execute: bool,
     family: &'static str,
     add_type: &'static str,
-    updatable: bool,
 ) -> anyhow::Result<Vec<Change>> {
     let wire: Vec<Value> = desired
         .iter()
         .map(|c| engine::encode_config::<T>(c))
         .collect::<anyhow::Result<_>>()?;
-    reconcile_family(client, &wire, execute, family, add_type, updatable).await
+    reconcile_family(client, &wire, execute, family, add_type).await
 }
 
 #[cfg(test)]
@@ -231,17 +244,6 @@ mod tests {
         assert_eq!(scalar(&json!("host")), "host");
         assert_eq!(scalar(&json!(8080)), "8080");
         assert_eq!(scalar(&json!(null)), "");
-    }
-
-    #[test]
-    fn truthy_matches_bool_and_one() {
-        assert!(truthy(&json!(true)));
-        assert!(truthy(&json!(1)));
-        assert!(truthy(&json!("1")));
-        assert!(!truthy(&json!(false)));
-        assert!(!truthy(&json!(0)));
-        assert!(!truthy(&json!("0")));
-        assert!(!truthy(&json!("")));
     }
 
     #[test]
@@ -276,5 +278,47 @@ mod tests {
         // a *disabled* provider we want disabled → in sync (0 == "")
         let want_off = json!({ "DISPNAME": "x", "ENABLED": false });
         assert!(in_sync(&want_off, &disabled));
+    }
+
+    #[test]
+    fn stub_params_are_minimal_and_pick_host_or_server() {
+        // newznab/etc use HOST; the stub carries only type/name/host.
+        let nz = json!({ "DISPNAME": "x", "HOST": "h", "API": "k", "ENABLED": true });
+        let p = stub_params("newznab", &nz).unwrap();
+        assert!(p.contains(&("type".into(), "newznab".into())));
+        assert!(p.contains(&("name".into(), "x".into())));
+        assert!(p.contains(&("HOST".into(), "h".into())));
+        assert!(!p.iter().any(|(k, _)| k == "ENABLED" || k == "API"));
+
+        // IRC uses SERVER as its host key.
+        let irc = json!({ "DISPNAME": "y", "SERVER": "irc.example.com" });
+        let p = stub_params("irc", &irc).unwrap();
+        assert!(p.contains(&("SERVER".into(), "irc.example.com".into())));
+
+        // no host at all → error (addProvider would bail).
+        assert!(stub_params("rss", &json!({ "DISPNAME": "z" })).is_err());
+    }
+
+    #[test]
+    fn change_params_set_all_fields_including_enabled_but_not_dispname() {
+        let wire = json!({ "DISPNAME": "x", "ENABLED": true, "HOST": "h", "DLPRIORITY": 0 });
+        let p = change_params("RSS_0", &wire);
+        assert!(p.contains(&("cmd".into(), "changeProvider".into())));
+        assert!(p.contains(&("name".into(), "RSS_0".into())));
+        assert!(p.contains(&("ENABLED".into(), "1".into()))); // set_bool via "1"
+        assert!(p.contains(&("HOST".into(), "h".into())));
+        assert!(p.contains(&("DLPRIORITY".into(), "0".into())));
+        // DISPNAME is the identity — never re-sent as a field.
+        assert!(!p.iter().any(|(k, _)| k == "DISPNAME"));
+    }
+
+    #[test]
+    fn name_of_maps_dispname_to_internal_name() {
+        let live = vec![
+            json!({ "NAME": "RSS_0", "DISPNAME": "mine" }),
+            json!({ "NAME": "RSS_1", "DISPNAME": "" }),
+        ];
+        assert_eq!(name_of(&live, "mine"), Some("RSS_0"));
+        assert_eq!(name_of(&live, "absent"), None);
     }
 }

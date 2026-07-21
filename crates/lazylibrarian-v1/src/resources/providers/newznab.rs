@@ -53,11 +53,11 @@ impl CustomSync for NewznabProvider {
         client: &'a HttpClient,
         desired: &'a [Value],
         _refs: &'a mut RefStore,
+        _prune: bool,
         execute: bool,
     ) -> CustomSyncFuture<'a> {
         Box::pin(async move {
-            super::reconcile_encoded::<Self>(client, desired, execute, "newznab", "newznab", true)
-                .await
+            super::reconcile_encoded::<Self>(client, desired, execute, "newznab", "newznab").await
         })
     }
 }

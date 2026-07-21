@@ -2,14 +2,23 @@
 # Starts Bazarr in a temp data dir, waits for it to generate its API key, reads
 # the key out of the config file, exports BAZARR_URL + BAZARR_API_KEY, and
 # cleans up on exit.
-{ pkgs, e2eShell }:
+{
+  pkgs,
+  e2eShell,
+  common,
+}:
 pkgs.mkShell {
   inputsFrom = [ e2eShell ];
   packages = [ pkgs.bazarr ];
   shellHook = ''
     echo "=== Configuratarr E2E DevShell (bazarr-v1) ==="
+    ${common}
 
     _BZ_DATA=$(mktemp -d -t configuratarr-bazarr-XXXXXX)
+
+    if ! e2e_reclaim_port 6767 Bazarr; then
+      return 2>/dev/null || exit 1
+    fi
 
     echo "  starting Bazarr..."
     bazarr --no-update --config "$_BZ_DATA" > "$_BZ_DATA/bazarr.log" 2>&1 &
@@ -36,7 +45,7 @@ pkgs.mkShell {
       return 1
     }
 
-    if _bz_wait; then
+    if _bz_wait && e2e_require "BAZARR_API_KEY" "$(_bz_key)"; then
       export BAZARR_URL="http://localhost:6767"
       export BAZARR_API_KEY="$(_bz_key)"
       echo "  Bazarr ready — $BAZARR_URL"

@@ -15,4 +15,5 @@ proxy_id: "${ref.proxy.my-proxy}"
 channels:
   - name: "#announce"
     password: "${env.IRC_CHAN_KEY}"
+    enabled: true
   - name: "#general"

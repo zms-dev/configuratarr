@@ -36,6 +36,7 @@ pub enum ChangeKind {
     Created,
     Updated,
     Unchanged,
+    Removed,
 }
 
 /// One reconcile outcome reported by a [`CustomSync`] hook. `detail` is a small
@@ -74,6 +75,14 @@ impl Change {
             detail: Vec::new(),
         }
     }
+    /// A pruned item — live but not declared, deleted by the hook.
+    pub fn removed(key: impl Into<String>) -> Self {
+        Self {
+            key: key.into(),
+            kind: ChangeKind::Removed,
+            detail: Vec::new(),
+        }
+    }
     /// Attach a display row (label → value). Never pass a secret.
     pub fn with(mut self, label: impl Into<String>, value: impl Into<String>) -> Self {
         self.detail.push((label.into(), value.into()));
@@ -86,9 +95,11 @@ pub type CustomSyncFuture<'a> =
     Pin<Box<dyn Future<Output = anyhow::Result<Vec<Change>>> + Send + 'a>>;
 
 /// Type-erased pointer to a [`CustomSync::reconcile`], carried by
-/// [`SyncKind::Custom`] and dispatched by the executor.
+/// [`SyncKind::Custom`] and dispatched by the executor. The two trailing flags
+/// are `(prune, execute)` — `prune` mirrors crud's `--prune` gate (delete live
+/// items absent from desired), `execute` gates writes off during a preview.
 pub type CustomSyncFn =
-    for<'a> fn(&'a HttpClient, &'a [Value], &'a mut RefStore, bool) -> CustomSyncFuture<'a>;
+    for<'a> fn(&'a HttpClient, &'a [Value], &'a mut RefStore, bool, bool) -> CustomSyncFuture<'a>;
 
 /// A hand-written reconcile hook for a `sync = custom` resource — the escape
 /// hatch for APIs that don't fit crud/singleton (multi-endpoint writes,
@@ -100,14 +111,18 @@ pub type CustomSyncFn =
 /// The engine hands it: the live `client`; the resolved `desired` configs
 /// (`${ref}` substituted, still snake_case config form — encode via `Self` with
 /// [`crate::engine`]); the `refs` store (register created ids so downstream
-/// `${ref}` resolve); and `execute`. It returns one [`Change`] per item; the
-/// engine builds the report [`Op`]s from those, so hooks stay clear of the plan
-/// model and can't leak a raw body.
+/// `${ref}` resolve); `prune` (the run's `--prune` gate — when set, delete live
+/// items the config no longer declares, mirroring crud); and `execute`. A hook
+/// that has no prunable delete simply ignores `prune`. It returns one [`Change`]
+/// per item (plus one [`Change::removed`] per pruned item); the engine builds
+/// the report [`Op`]s from those, so hooks stay clear of the plan model and
+/// can't leak a raw body.
 pub trait CustomSync {
     fn reconcile<'a>(
         client: &'a HttpClient,
         desired: &'a [Value],
         refs: &'a mut RefStore,
+        prune: bool,
         execute: bool,
     ) -> CustomSyncFuture<'a>;
 }
@@ -348,7 +363,7 @@ async fn run<S: Service>(
                 singleton_step(&client, instance, field, &mut refs, execute).await?
             }
             SyncKind::Custom(hook) => {
-                custom_step(&client, instance, field, &mut refs, hook, execute).await?
+                custom_step(&client, instance, field, &mut refs, hook, opts, execute).await?
             }
             SyncKind::Embedded => {
                 anyhow::bail!("embedded resource `{tn}` cannot be a top-level service field")
@@ -428,6 +443,7 @@ async fn custom_step<S: Service>(
     field: &ServiceField<S>,
     refs: &mut RefStore,
     hook: CustomSyncFn,
+    opts: ApplyOptions,
     execute: bool,
 ) -> anyhow::Result<Option<PlanStep>> {
     let tn = field.type_name;
@@ -441,7 +457,7 @@ async fn custom_step<S: Service>(
     };
 
     let desired = resolve_all(&cfgs, refs, Ok)?;
-    let changes = hook(client, &desired, refs, execute)
+    let changes = hook(client, &desired, refs, opts.prune, execute)
         .await
         .with_context(|| format!("custom sync `{tn}`"))?;
 
@@ -538,6 +554,11 @@ fn change_to_op(c: Change) -> Op {
             changes: Vec::new(),
         },
         ChangeKind::Unchanged => Op::Noop { key: c.key },
+        ChangeKind::Removed => Op::Delete {
+            key: c.key,
+            endpoint: INERT,
+            path: String::new(),
+        },
     }
 }
 

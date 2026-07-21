@@ -62,6 +62,7 @@ impl CustomSync for User {
         client: &'a HttpClient,
         desired: &'a [Value],
         refs: &'a mut RefStore,
+        _prune: bool,
         execute: bool,
     ) -> CustomSyncFuture<'a> {
         Box::pin(async move {

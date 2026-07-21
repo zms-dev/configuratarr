@@ -32,6 +32,10 @@ let
   };
 in
 let
+  # Shared bash helpers (port reclaim, non-empty assertions, retry) — see the
+  # file header for the failure modes they exist to prevent.
+  common = import ./e2e-shells/_common.nix { inherit pkgs; };
+
   e2e = pkgs.mkShell {
     inputsFrom = [ default ];
     buildInputs = with pkgs; [
@@ -52,41 +56,49 @@ in
 
   e2e-radarr = import ./e2e-shells/radarr-v3.nix {
     inherit pkgs;
+    inherit common;
     e2eShell = e2e;
   };
 
   e2e-sonarr = import ./e2e-shells/sonarr-v3.nix {
     inherit pkgs;
+    inherit common;
     e2eShell = e2e;
   };
 
   e2e-prowlarr = import ./e2e-shells/prowlarr-v1.nix {
     inherit pkgs;
+    inherit common;
     e2eShell = e2e;
   };
 
   e2e-lidarr = import ./e2e-shells/lidarr-v1.nix {
     inherit pkgs;
+    inherit common;
     e2eShell = e2e;
   };
 
   e2e-jellyfin = import ./e2e-shells/jellyfin-v11.nix {
     inherit pkgs;
+    inherit common;
     e2eShell = e2e;
   };
 
   e2e-bazarr = import ./e2e-shells/bazarr-v1.nix {
     inherit pkgs;
+    inherit common;
     e2eShell = e2e;
   };
 
   e2e-autobrr = import ./e2e-shells/autobrr-v1.nix {
     inherit pkgs;
+    inherit common;
     e2eShell = e2e;
   };
 
   e2e-lazylibrarian = import ./e2e-shells/lazylibrarian-v1.nix {
     inherit pkgs;
+    inherit common;
     e2eShell = e2e;
   };
 }

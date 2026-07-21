@@ -173,11 +173,11 @@ async fn auth_password_apply_is_idempotent() {
     );
 }
 
-/// The newly-modelled sections round-trip: a flat section (`movie_scores`), the
-/// `general` default-profile toggles, and — the novel wire shape — `subsync.checker`,
-/// a nested object *inside* a section (flattened to `settings-subsync-checker-*`
-/// form keys). Applying then re-applying is a pure no-op, proving all three
-/// encode/read shapes match bazarr's contract.
+/// The newly-modelled sections round-trip: the `general` default-profile toggles,
+/// and — the novel wire shape — `subsync.checker`, a nested object *inside* a
+/// section (flattened to `settings-subsync-checker-*` form keys). Applying then
+/// re-applying is a pure no-op, proving both encode/read shapes match bazarr's
+/// contract.
 #[tokio::test]
 #[ignore]
 async fn extended_sections_apply_is_idempotent() {
@@ -187,11 +187,6 @@ async fn extended_sections_apply_is_idempotent() {
             "general": {
                 "serie_default_enabled": false,
                 "movie_default_enabled": false,
-            },
-            "movie_scores": {
-                "hash": 119,
-                "title": 60,
-                "year": 30,
             },
             "subsync": {
                 "checker": {

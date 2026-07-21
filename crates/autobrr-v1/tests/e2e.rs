@@ -9,24 +9,89 @@
 //!   nix develop .#e2e-autobrr --command \
 //!     cargo nextest run -p autobrr-v1 --test e2e --run-ignored all -j1
 //!
+//! The live instance is shared and persists across runs, so every test begins by
+//! wiping it to a clean slate ([`setup`] → [`reset`], API-driven, api keys
+//! excluded). That makes tests order-independent and lets a prune test delete to
+//! empty without harming a sibling.
+//!
 //! Runtime assumptions validated here:
 //!   1. auth — the API key is accepted in the `X-API-Token` header;
 //!   2. casing — autobrr serialises/accepts snake_case JSON;
-//!   3. the custom seams are idempotent — `create_only` (api keys,
-//!      notifications), the `filter` two-step create (POST subset → PATCH full),
-//!      the `indexer` create/update (base id on create, stored id on update), and
-//!      the `irc_network` structural-subset diff;
+//!   3. the custom seams are idempotent — `create_only` (api keys), the
+//!      `notification` upsert+prune (create → update on drift → DELETE), the
+//!      `filter` two-step create (POST subset → PATCH full), the `indexer`
+//!      create/update (base id on create, stored id on update), and the
+//!      `irc_network` structural-subset diff;
 //!   4. `proxy` crud round-trips and prunes.
 
 use std::time::Duration;
 
 use autobrr_v1::AutobrrV1;
+use core_lib::Service;
 use core_lib::apply::{ApplyOptions, Report, apply, wait_healthy};
 use core_testkit::{env_pair, instance};
 use serde_json::{Value, json};
 
 fn env() -> Option<(String, String)> {
     env_pair("AUTOBRR_URL", "AUTOBRR_API_KEY")
+}
+
+/// Every collection autobrr exposes a DELETE for, as `(list endpoint, delete
+/// prefix)`, ordered **dependents-first** so a purge never trips an FK: a list
+/// references filters + a download client; a filter's actions reference download
+/// clients and a dedup profile; a feed references an indexer; an indexer
+/// references a proxy. **api keys are excluded** — deleting the key configuratarr
+/// authenticates with would lock the run out.
+const PURGE: &[(&str, &str)] = &[
+    ("/api/lists", "/api/lists"),
+    ("/api/feeds", "/api/feeds"),
+    ("/api/filters", "/api/filters"),
+    ("/api/indexer", "/api/indexer"),
+    (
+        "/api/release/profiles/duplicate",
+        "/api/release/profiles/duplicate",
+    ),
+    ("/api/download_clients", "/api/download_clients"),
+    ("/api/irc", "/api/irc/network"),
+    ("/api/notification", "/api/notification"),
+    ("/api/proxy", "/api/proxy"),
+];
+
+/// Wipe every managed collection so each test starts from a clean instance. The
+/// live e2e instance is **shared and persists across runs**, so without this a
+/// prune-to-empty test would delete another test's resources and a create test
+/// would race stale state. Purely API-driven (GET-list → DELETE each) and so
+/// **independent of the engine's own prune path** — a prune bug can't hide by
+/// breaking the reset. Runs at the start of every test via [`setup`].
+async fn reset(client: &core_lib::HttpClient) {
+    for (list_path, del_prefix) in PURGE {
+        let items: Vec<Value> = client.get(list_path).await.expect("reset: list collection");
+        for item in &items {
+            if let Some(id) = item.get("id").and_then(Value::as_i64) {
+                client
+                    .delete(&format!("{del_prefix}/{id}"))
+                    .await
+                    .expect("reset: delete item");
+            }
+        }
+    }
+}
+
+/// Env gate + health wait + [`reset`] to a clean slate. Returns `(url, key)`, or
+/// `None` when the env vars are absent (test skipped outside the e2e shell). Each
+/// test starts from this, so tests are order-independent and free to prune to
+/// empty without harming a sibling.
+async fn setup() -> Option<(String, String)> {
+    let (url, key) = env()?;
+    let (svc, _) = instance::<AutobrrV1>(&url, &key, json!({}));
+    wait_healthy(&svc, Duration::from_secs(60))
+        .await
+        .expect("autobrr healthy");
+    let client = core_lib::apply::connect(&svc.connection())
+        .await
+        .expect("connect");
+    reset(&client).await;
+    Some((url, key))
 }
 
 async fn run(url: &str, key: &str, resources: Value, opts: ApplyOptions) -> Report {
@@ -69,7 +134,9 @@ async fn filter_action_ids(client: &core_lib::HttpClient, filter: &str) -> Vec<(
 #[tokio::test]
 #[ignore]
 async fn waits_for_healthy() {
-    let Some((url, key)) = env() else { return };
+    let Some((url, key)) = setup().await else {
+        return;
+    };
     let (svc, _) = instance::<AutobrrV1>(&url, &key, json!({}));
     wait_healthy(&svc, Duration::from_secs(60))
         .await
@@ -80,16 +147,23 @@ async fn waits_for_healthy() {
 #[tokio::test]
 #[ignore]
 async fn connects_with_no_resources() {
-    let Some((url, key)) = env() else { return };
+    let Some((url, key)) = setup().await else {
+        return;
+    };
     let report = run(&url, &key, json!({}), ApplyOptions::default()).await;
     assert_eq!(report, Report::default());
 }
 
 /// Create-only api key: created on the first apply, unchanged on the second.
+/// api keys are the one no-prune exception (pruning could delete the credential
+/// configuratarr authenticates with), so `--prune` must **not** delete this key:
+/// the run passes `prune: true` and asserts the key is left untouched.
 #[tokio::test]
 #[ignore]
-async fn api_key_create_idempotent() {
-    let Some((url, key)) = env() else { return };
+async fn api_key_create_idempotent_no_prune() {
+    let Some((url, key)) = setup().await else {
+        return;
+    };
     let cfg = json!({ "api_keys": [{ "name": "cfg-e2e", "scopes": [] }] });
     run(&url, &key, cfg.clone(), ApplyOptions::default()).await;
     let second = run(&url, &key, cfg, ApplyOptions::default()).await;
@@ -98,24 +172,95 @@ async fn api_key_create_idempotent() {
         "second api-key apply should create nothing"
     );
     assert_eq!(second.unchanged, 1);
+
+    // Even with --prune and an empty api_keys list, api keys are never deleted.
+    let pruned = run(
+        &url,
+        &key,
+        json!({ "api_keys": [] }),
+        ApplyOptions { prune: true },
+    )
+    .await;
+    assert_eq!(
+        pruned.deleted, 0,
+        "api keys are never pruned (self-lockout guard): {pruned:?}"
+    );
 }
 
-/// Create-only notification: created once, then unchanged.
+/// Notification upsert + prune: created/settled, idempotent, then a changed
+/// `webhook` drives an **update** (the bug that started this — a create-only
+/// notification never pushed field drift; `webhook` is not redacted on read, so
+/// the drift is detectable and settles), then `--prune` deletes it via DELETE.
 #[tokio::test]
 #[ignore]
-async fn notification_create_idempotent() {
-    let Some((url, key)) = env() else { return };
-    let cfg = json!({ "notifications": [{
-        "name": "cfg-e2e-discord",
-        "notification_type": "DISCORD",
-        "enabled": true,
-        "events": ["PUSH_APPROVED"],
-        "webhook": "https://discord.com/api/webhooks/1/abc",
-    }] });
-    run(&url, &key, cfg.clone(), ApplyOptions::default()).await;
-    let second = run(&url, &key, cfg, ApplyOptions::default()).await;
+async fn notification_upsert_and_prune() {
+    let Some((url, key)) = setup().await else {
+        return;
+    };
+    let mk = |webhook: &str| {
+        json!({ "notifications": [{
+            "name": "cfg-e2e-discord",
+            "notification_type": "DISCORD",
+            "enabled": true,
+            "events": ["PUSH_APPROVED"],
+            "webhook": webhook,
+        }] })
+    };
+
+    // Settle (create or reconcile pre-existing), then a repeated apply is a no-op.
+    run(
+        &url,
+        &key,
+        mk("https://discord.com/api/webhooks/1/abc"),
+        ApplyOptions::default(),
+    )
+    .await;
+    let second = run(
+        &url,
+        &key,
+        mk("https://discord.com/api/webhooks/1/abc"),
+        ApplyOptions::default(),
+    )
+    .await;
     assert_eq!(second.created, 0);
-    assert_eq!(second.unchanged, 1);
+    assert_eq!(
+        second.unchanged, 1,
+        "second notification apply is a no-op: {second:?}"
+    );
+
+    // Change the webhook → drift must be pushed as an update (the headline fix).
+    let updated = run(
+        &url,
+        &key,
+        mk("https://discord.com/api/webhooks/2/xyz"),
+        ApplyOptions::default(),
+    )
+    .await;
+    assert_eq!(
+        updated.updated, 1,
+        "notification webhook drift pushed: {updated:?}"
+    );
+    let settled = run(
+        &url,
+        &key,
+        mk("https://discord.com/api/webhooks/2/xyz"),
+        ApplyOptions::default(),
+    )
+    .await;
+    assert_eq!(
+        settled.unchanged, 1,
+        "update settles to unchanged: {settled:?}"
+    );
+
+    // Prune: declaring no notifications with --prune deletes it.
+    let pruned = run(
+        &url,
+        &key,
+        json!({ "notifications": [] }),
+        ApplyOptions { prune: true },
+    )
+    .await;
+    assert!(pruned.deleted >= 1, "notification pruned: {pruned:?}");
 }
 
 /// Download client: created on the first apply, unchanged on the second (crud
@@ -123,7 +268,9 @@ async fn notification_create_idempotent() {
 #[tokio::test]
 #[ignore]
 async fn download_client_create_idempotent() {
-    let Some((url, key)) = env() else { return };
+    let Some((url, key)) = setup().await else {
+        return;
+    };
     let cfg = json!({ "download_clients": [{
         "name": "cfg-e2e-qbit",
         "client_type": "QBITTORRENT",
@@ -146,7 +293,9 @@ async fn download_client_create_idempotent() {
 #[tokio::test]
 #[ignore]
 async fn filter_two_step_create_idempotent() {
-    let Some((url, key)) = env() else { return };
+    let Some((url, key)) = setup().await else {
+        return;
+    };
     let cfg = json!({ "filters": [{
         "name": "cfg-e2e-1080p",
         "enabled": true,
@@ -175,9 +324,9 @@ async fn filter_two_step_create_idempotent() {
 #[tokio::test]
 #[ignore]
 async fn filter_full_fields_and_dedup_ref() {
-    use core_lib::Service;
-
-    let Some((url, key)) = env() else { return };
+    let Some((url, key)) = setup().await else {
+        return;
+    };
     let cfg = json!({
         "download_clients": [{
             "name": "cfg-e2e-qbit2", "client_type": "QBITTORRENT", "enabled": true,
@@ -260,9 +409,9 @@ async fn filter_full_fields_and_dedup_ref() {
 #[tokio::test]
 #[ignore]
 async fn filter_attaches_indexer_by_ref() {
-    use core_lib::Service;
-
-    let Some((url, key)) = env() else { return };
+    let Some((url, key)) = setup().await else {
+        return;
+    };
     let cfg = json!({
         "indexers": [{
             "name": "cfg-e2e-refidx",
@@ -323,9 +472,9 @@ async fn filter_attaches_indexer_by_ref() {
 #[tokio::test]
 #[ignore]
 async fn feed_references_indexer_idempotent() {
-    use core_lib::Service;
-
-    let Some((url, key)) = env() else { return };
+    let Some((url, key)) = setup().await else {
+        return;
+    };
     let cfg = json!({
         "indexers": [{
             "name": "cfg-e2e-feedidx",
@@ -385,9 +534,9 @@ async fn feed_references_indexer_idempotent() {
 #[tokio::test]
 #[ignore]
 async fn list_references_filter_idempotent() {
-    use core_lib::Service;
-
-    let Some((url, key)) = env() else { return };
+    let Some((url, key)) = setup().await else {
+        return;
+    };
     let cfg = json!({
         "filters": [{
             "name": "cfg-e2e-listfilter",
@@ -406,39 +555,38 @@ async fn list_references_filter_idempotent() {
         }],
     });
 
-    // Successful apply proves the filter ref resolved.
+    // Successful apply proves the `${ref.filter.…}` resolved and autobrr accepted
+    // the list with its filter attachment (an invalid filter id would 400/500).
     run(&url, &key, cfg.clone(), ApplyOptions::default()).await;
 
-    // The filter attachment landed server-side as the filter's numeric id.
+    // The list landed. NB: autobrr's `GET /api/lists` does **not** echo the filter
+    // attachment (`List()` hardcodes `filters: []`, and there is no
+    // `GET /api/lists/{id}`), so the attachment is write-only and can't be
+    // asserted via the API — the successful create above is the evidence it took.
     let (svc, _) = instance::<AutobrrV1>(&url, &key, json!({}));
     let client = core_lib::apply::connect(&svc.connection())
         .await
         .expect("connect");
-    let filters: Vec<Value> = client.get("/api/filters").await.expect("list filters");
-    let fid = filters
-        .iter()
-        .find(|f| f.get("name").and_then(Value::as_str) == Some("cfg-e2e-listfilter"))
-        .and_then(|f| f.get("id").and_then(Value::as_i64))
-        .expect("filter present");
     let lists: Vec<Value> = client.get("/api/lists").await.expect("list lists");
-    let list = lists
-        .iter()
-        .find(|l| l.get("name").and_then(Value::as_str) == Some("cfg-e2e-list"))
-        .expect("list present");
-    let attached: Vec<i64> = list["filters"]
-        .as_array()
-        .map(|a| a.iter().filter_map(|f| f["id"].as_i64()).collect())
-        .unwrap_or_default();
     assert!(
-        attached.contains(&fid),
-        "list should have filter {fid} attached, got {attached:?}"
+        lists
+            .iter()
+            .any(|l| l.get("name").and_then(Value::as_str) == Some("cfg-e2e-list")),
+        "list should be present after apply"
     );
 
-    // Idempotent — the subset diff over the redacted api_key must settle.
+    // Idempotent — `filters` is write-only (never read back), so the readable
+    // subset diff must settle to a no-op rather than re-`PUT` forever (a list
+    // update 500s on a never-refreshed list — autobrr's NULL last_refresh scan).
     let second = run(&url, &key, cfg, ApplyOptions::default()).await;
     assert_eq!(
         second.updated, 0,
         "second list apply is a no-op: {second:?}"
+    );
+    // Both the filter and the list read back unchanged.
+    assert_eq!(
+        second.unchanged, 2,
+        "second apply leaves the filter + list unchanged: {second:?}"
     );
 }
 
@@ -447,7 +595,9 @@ async fn list_references_filter_idempotent() {
 #[tokio::test]
 #[ignore]
 async fn proxy_crud_idempotent_prune() {
-    let Some((url, key)) = env() else { return };
+    let Some((url, key)) = setup().await else {
+        return;
+    };
     let cfg = json!({ "proxies": [{
         "name": "cfg-e2e-proxy",
         "enabled": true,
@@ -474,13 +624,97 @@ async fn proxy_crud_idempotent_prune() {
     assert!(pruned.deleted >= 1, "proxy pruned: {pruned:?}");
 }
 
+/// `release_profile_duplicate` uses the `create_only_prune` seam: created on the
+/// first apply, left untouched on a repeat (no update path), then `--prune` with
+/// an empty list deletes it. Prune-to-empty is safe because [`setup`] hands each
+/// test a clean instance. The live counterpart to the `create_only_prune` unit
+/// test.
+#[tokio::test]
+#[ignore]
+async fn release_profile_duplicate_create_and_prune() {
+    let Some((url, key)) = setup().await else {
+        return;
+    };
+    let cfg = json!({ "release_profile_duplicates": [{
+        "name": "cfg-e2e-dedup-prune",
+        "title": true, "year": true, "resolution": true,
+    }] });
+    let first = run(&url, &key, cfg.clone(), ApplyOptions::default()).await;
+    assert_eq!(first.created, 1, "dedup profile created: {first:?}");
+    let second = run(&url, &key, cfg, ApplyOptions::default()).await;
+    assert_eq!(second.created, 0);
+    assert_eq!(
+        second.unchanged, 1,
+        "create_only: a repeat apply is a no-op: {second:?}"
+    );
+
+    // --prune with an empty list deletes it (create_only_prune's prune tail).
+    let pruned = run(
+        &url,
+        &key,
+        json!({ "release_profile_duplicates": [] }),
+        ApplyOptions { prune: true },
+    )
+    .await;
+    assert_eq!(
+        pruned.deleted, 1,
+        "dedup profile pruned to empty: {pruned:?}"
+    );
+}
+
+/// A whole filter is pruned via `filter.rs`'s direct `reconcile::prune_absent`
+/// tail (distinct from the *action-level* prune in
+/// `filter_prunes_undeclared_action`): create two filters, then re-apply
+/// declaring only one with `--prune` → the undeclared filter is deleted, the
+/// declared one kept. Safe to prune here because [`setup`] starts clean.
+#[tokio::test]
+#[ignore]
+async fn filter_prune_to_empty() {
+    let Some((url, key)) = setup().await else {
+        return;
+    };
+    let two = json!({ "filters": [
+        { "name": "cfg-e2e-keep", "enabled": true, "resolutions": ["1080p"] },
+        { "name": "cfg-e2e-drop", "enabled": true, "resolutions": ["720p"] },
+    ] });
+    let created = run(&url, &key, two, ApplyOptions::default()).await;
+    assert_eq!(created.created, 2, "two filters created: {created:?}");
+
+    let (svc, _) = instance::<AutobrrV1>(&url, &key, json!({}));
+    let client = core_lib::apply::connect(&svc.connection())
+        .await
+        .expect("connect");
+    let before: Vec<Value> = client.get("/api/filters").await.expect("list filters");
+    assert_eq!(before.len(), 2, "two filters live before prune");
+
+    // Declare only "keep" with --prune → "drop" is deleted.
+    let one = json!({ "filters": [
+        { "name": "cfg-e2e-keep", "enabled": true, "resolutions": ["1080p"] },
+    ] });
+    let pruned = run(&url, &key, one, ApplyOptions { prune: true }).await;
+    assert_eq!(pruned.deleted, 1, "undeclared filter pruned: {pruned:?}");
+
+    let after: Vec<Value> = client.get("/api/filters").await.expect("list filters");
+    let names: Vec<&str> = after
+        .iter()
+        .filter_map(|f| f.get("name").and_then(Value::as_str))
+        .collect();
+    assert_eq!(
+        names,
+        vec!["cfg-e2e-keep"],
+        "only 'keep' remains: {names:?}"
+    );
+}
+
 /// Indexer custom sync: created, idempotent, then a toggled `enabled` drives an
 /// update — which must echo the *server-stored* identifier (`torznab-<name>`);
 /// sending the base id 500s. Regression guard for that update path.
 #[tokio::test]
 #[ignore]
 async fn indexer_create_update_idempotent() {
-    let Some((url, key)) = env() else { return };
+    let Some((url, key)) = setup().await else {
+        return;
+    };
     let mk = |enabled: bool| {
         json!({ "indexers": [{
         "name": "cfg-e2e-tz",
@@ -518,9 +752,9 @@ async fn indexer_create_update_idempotent() {
 #[tokio::test]
 #[ignore]
 async fn irc_indexer_with_base_url() {
-    use core_lib::Service;
-
-    let Some((url, key)) = env() else { return };
+    let Some((url, key)) = setup().await else {
+        return;
+    };
     let cfg = json!({ "indexers": [{
         "name": "cfg-e2e-tl",
         "identifier": "torrentleech",
@@ -559,7 +793,9 @@ async fn irc_indexer_with_base_url() {
 #[tokio::test]
 #[ignore]
 async fn irc_network_create_update_idempotent() {
-    let Some((url, key)) = env() else { return };
+    let Some((url, key)) = setup().await else {
+        return;
+    };
     let mk = |enabled: bool| {
         json!({ "irc_networks": [{
         "name": "cfg-e2e-net",
@@ -588,6 +824,37 @@ async fn irc_network_create_update_idempotent() {
         settled.unchanged, 1,
         "update settles to unchanged: {settled:?}"
     );
+
+    // The channel must be stored *enabled* even though the config didn't say so:
+    // autobrr's channel struct decodes an absent `enabled` as `false`, and since
+    // 1.82 a disabled channel is skipped by the join workflow (no announces).
+    // Read the stored network — the `GET /api/irc` list reports handler state,
+    // not the rows.
+    let (svc, _) = instance::<AutobrrV1>(&url, &key, json!({}));
+    let client = core_lib::apply::connect(&svc.connection())
+        .await
+        .expect("connect");
+    let networks: Vec<Value> = client.get("/api/irc").await.expect("list networks");
+    let id = networks
+        .iter()
+        .find(|n| n.get("name").and_then(Value::as_str) == Some("cfg-e2e-net"))
+        .and_then(|n| n.get("id"))
+        .expect("network present")
+        .clone();
+    let stored: Value = client
+        .get(&format!("/api/irc/network/{id}"))
+        .await
+        .expect("get network");
+    let channel = stored
+        .get("channels")
+        .and_then(Value::as_array)
+        .and_then(|c| c.first())
+        .expect("channel stored");
+    assert_eq!(
+        channel.get("enabled"),
+        Some(&Value::Bool(true)),
+        "channel stored enabled: {channel:?}"
+    );
 }
 
 /// Create-only notification of the newly-added `WEBHOOK` type, subscribed to the
@@ -597,7 +864,9 @@ async fn irc_network_create_update_idempotent() {
 #[tokio::test]
 #[ignore]
 async fn notification_webhook_release_new_idempotent() {
-    let Some((url, key)) = env() else { return };
+    let Some((url, key)) = setup().await else {
+        return;
+    };
     let cfg = json!({ "notifications": [{
         "name": "cfg-e2e-webhook",
         "notification_type": "WEBHOOK",
@@ -622,9 +891,9 @@ async fn notification_webhook_release_new_idempotent() {
 #[tokio::test]
 #[ignore]
 async fn download_client_auth_block_and_rules() {
-    use core_lib::Service;
-
-    let Some((url, key)) = env() else { return };
+    let Some((url, key)) = setup().await else {
+        return;
+    };
     let cfg = json!({ "download_clients": [{
         "name": "cfg-e2e-auth",
         "client_type": "QBITTORRENT",
@@ -679,9 +948,9 @@ async fn download_client_auth_block_and_rules() {
 #[tokio::test]
 #[ignore]
 async fn filter_external_check_new_fields() {
-    use core_lib::Service;
-
-    let Some((url, key)) = env() else { return };
+    let Some((url, key)) = setup().await else {
+        return;
+    };
     let cfg = json!({ "filters": [{
         "name": "cfg-e2e-extcheck",
         "enabled": true,
@@ -753,9 +1022,9 @@ async fn filter_external_check_new_fields() {
 #[tokio::test]
 #[ignore]
 async fn download_client_usenet_types() {
-    use core_lib::Service;
-
-    let Some((url, key)) = env() else { return };
+    let Some((url, key)) = setup().await else {
+        return;
+    };
     let cfg = json!({ "download_clients": [
         {
             "name": "cfg-e2e-sab", "client_type": "SABNZBD", "enabled": true,
@@ -804,9 +1073,9 @@ async fn download_client_usenet_types() {
 #[tokio::test]
 #[ignore]
 async fn filter_actions_stable_on_update() {
-    use core_lib::Service;
-
-    let Some((url, key)) = env() else { return };
+    let Some((url, key)) = setup().await else {
+        return;
+    };
     let mk = |priority: i64| {
         json!({ "filters": [{
             "name": "cfg-e2e-actionids",
@@ -855,9 +1124,9 @@ async fn filter_actions_stable_on_update() {
 #[tokio::test]
 #[ignore]
 async fn filter_prunes_undeclared_action() {
-    use core_lib::Service;
-
-    let Some((url, key)) = env() else { return };
+    let Some((url, key)) = setup().await else {
+        return;
+    };
     let base = |actions: Value| {
         json!({ "filters": [{
             "name": "cfg-e2e-prune",

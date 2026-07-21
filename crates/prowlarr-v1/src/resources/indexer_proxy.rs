@@ -6,11 +6,15 @@ use crate::resources::provider::Provider;
 /// A Prowlarr indexer proxy — routes requests for specific indexers through an
 /// intermediate proxy (FlareSolverr, HTTP CONNECT, SOCKS4, or SOCKS5) to
 /// bypass bot-protection or access geo-restricted indexers.
+// Create/update use `?forceSave=true`: the API otherwise runs a live connectivity
+// test against the remote service on save and rejects with HTTP 400 when it is
+// unreachable from this host or rate-limiting. A declarative sync must converge to
+// the desired config regardless; the app still surfaces the failing health check.
 #[resource(
     sync = crud,
     list = get("/api/v1/indexerproxy"),
-    create = post("/api/v1/indexerproxy"),
-    update = put("/api/v1/indexerproxy/${self.id}"),
+    create = post("/api/v1/indexerproxy?forceSave=true"),
+    update = put("/api/v1/indexerproxy/${self.id}?forceSave=true"),
     delete = delete("/api/v1/indexerproxy/${self.id}"),
 )]
 pub struct IndexerProxy {

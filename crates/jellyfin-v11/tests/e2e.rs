@@ -12,9 +12,10 @@
 //!   1. auth — the API key is accepted in the `Authorization` header;
 //!   2. casing — the server serialises/accepts camelCase JSON by default.
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use core_lib::apply::{ApplyOptions, Report, apply, wait_healthy};
+use core_lib::Service;
+use core_lib::apply::{ApplyOptions, Report, apply, connect, wait_healthy};
 use core_testkit::{env_pair, instance};
 use jellyfin_v11::JellyfinV11;
 use serde_json::{Value, json};
@@ -23,15 +24,49 @@ fn env() -> Option<(String, String)> {
     env_pair("JELLYFIN_URL", "JELLYFIN_API_KEY")
 }
 
+/// Wait until Jellyfin is *stably* ready. After the startup wizard, first-run DB
+/// migrations make even the authenticated health endpoint (`/System/Info`) 500
+/// intermittently, and that settle can outlast the shell's startup gate into the
+/// first test. [`wait_healthy`] returns on the **first** OK, so a single lucky
+/// response between flaps lets the following apply race a transient 5xx (the
+/// cold-start flake: `auth_key_create_idempotent` failing at ~0.04s). Require a
+/// few **consecutive** OKs against the declared health endpoint instead. Only the
+/// first test after boot actually waits; once stable this returns in ~1s.
+async fn wait_ready(svc: &JellyfinV11) {
+    let client = connect(&svc.connection()).await.expect("connect");
+    let path = JellyfinV11::descriptor()
+        .health_check
+        .expect("jellyfin declares a health endpoint");
+    let deadline = Instant::now() + Duration::from_secs(60);
+    let mut streak = 0;
+    loop {
+        match client.get::<Value>(path).await {
+            Ok(_) => {
+                streak += 1;
+                if streak >= 3 {
+                    return;
+                }
+            }
+            Err(e) => {
+                streak = 0;
+                assert!(
+                    Instant::now() < deadline,
+                    "jellyfin not stably healthy: {e:#}"
+                );
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(300)).await;
+    }
+}
+
 async fn run(url: &str, key: &str, resources: Value, opts: ApplyOptions) -> Report {
     let (svc, value) = instance::<JellyfinV11>(url, key, resources);
-    wait_healthy(&svc, Duration::from_secs(60))
-        .await
-        .expect("jellyfin healthy");
+    wait_ready(&svc).await;
     apply(&svc, &value, opts).await.expect("apply succeeds")
 }
 
-/// `wait_healthy` against the live API: `/System/Info/Public` answers OK.
+/// `wait_healthy` against the live API: the authenticated `/System/Info` answers
+/// OK (also confirms the token).
 #[tokio::test]
 #[ignore]
 async fn waits_for_healthy() {

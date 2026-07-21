@@ -3,7 +3,9 @@
 //! `sync = crud`, keyed by `name`: GET lists, POST creates, PUT updates. The
 //! update PUT targets the **collection** path (autobrr reads the id from the
 //! body), not a `/{id}` path — so the update endpoint carries no `${self.id}`.
-//! autobrr exposes no delete for download clients, so there is no prune.
+//! Delete is `DELETE /api/download_clients/${self.id}`; declaring it makes the
+//! resource prune-capable, so `--prune` deletes clients the config no longer
+//! declares (like [`Proxy`](crate::resources::proxy::Proxy)).
 
 use core_lib::SecretValue;
 use core_macros::resource;
@@ -17,6 +19,7 @@ use crate::resources::download_client_settings::DownloadClientSettings;
     list = get("/api/download_clients"),
     create = post("/api/download_clients"),
     update = put("/api/download_clients"),
+    delete = delete("/api/download_clients/${self.id}"),
 )]
 pub struct DownloadClient {
     /// Server-assigned id.

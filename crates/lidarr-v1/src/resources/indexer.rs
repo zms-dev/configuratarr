@@ -9,11 +9,15 @@ use crate::resources::indexers::IndexerProvider;
 use crate::resources::provider::Provider;
 
 /// Indexer definition — connects Lidarr to a usenet or torrent search source.
+// Create/update use `?forceSave=true`: the API otherwise runs a live connectivity
+// test against the remote service on save and rejects with HTTP 400 when it is
+// unreachable from this host or rate-limiting. A declarative sync must converge to
+// the desired config regardless; the app still surfaces the failing health check.
 #[resource(
     sync = crud,
     list = get("/api/v1/indexer"),
-    create = post("/api/v1/indexer"),
-    update = put("/api/v1/indexer/${self.id}"),
+    create = post("/api/v1/indexer?forceSave=true"),
+    update = put("/api/v1/indexer/${self.id}?forceSave=true"),
     delete = delete("/api/v1/indexer/${self.id}"),
 )]
 pub struct Indexer {

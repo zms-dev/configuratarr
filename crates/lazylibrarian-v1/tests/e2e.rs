@@ -12,16 +12,18 @@
 //!   1. auth — the api key is accepted as the `?apikey=` query parameter
 //!      (`Auth::ApiKeyQuery`), including on the `/api?cmd=getVersion` health probe;
 //!   2. the query-dispatch write primitive (`get_query`) reaches every command;
-//!   3. the custom seams converge — newznab/torznab upsert by `DISPNAME`,
-//!      rss/irc/gen + magazines + authors create-only, config diffs per-variable
-//!      via readCFG/writeCFG.
+//!   3. the custom seams converge — all provider families upsert by `DISPNAME`
+//!      (stub-add + update-by-internal-`NAME`, enabled on the first apply),
+//!      magazines + authors create-only, config diffs per-variable via
+//!      readCFG/writeCFG.
 //!
 //! The e2e instance persists state across runs, so assertions check
 //! **idempotency** (a second apply makes no writes), not `created == 1`.
 
 use std::time::Duration;
 
-use core_lib::apply::{ApplyOptions, Report, apply, wait_healthy};
+use core_lib::Service;
+use core_lib::apply::{ApplyOptions, Report, apply, connect, wait_healthy};
 use core_testkit::{env_pair, instance};
 use lazylibrarian_v1::LazyLibrarianV1;
 use serde_json::{Value, json};
@@ -38,21 +40,40 @@ async fn run(url: &str, key: &str, resources: Value, opts: ApplyOptions) -> Repo
     apply(&svc, &value, opts).await.expect("apply succeeds")
 }
 
-/// Apply `cfg` until it **converges**, then assert stability. Some LazyLibrarian
-/// resources take two applies to settle — e.g. `addProvider` does not persist a
-/// newznab's `enabled`, so the create leaves drift that the `changeProvider`
-/// update fixes on the next apply. A correct config-sync resource must reach a
-/// fixed point and stay there, so we apply three times and assert the last is a
-/// pure no-op.
+/// Whether the provider named `dispname` in the `family` array of `listProviders`
+/// is enabled. Connects a live client and reads it back — the direct check that
+/// `addProvider`'s dropped-`ENABLED` bug is worked around.
+async fn provider_enabled(url: &str, key: &str, family: &str, dispname: &str) -> bool {
+    let (svc, _) = instance::<LazyLibrarianV1>(url, key, json!({}));
+    let client = connect(&svc.connection()).await.expect("connect");
+    let list = lazylibrarian_v1::http::get(&client, &[("cmd", "listProviders")])
+        .await
+        .expect("listProviders");
+    list.get(family)
+        .and_then(Value::as_array)
+        .map(|arr| {
+            arr.iter().any(|e| {
+                e.get("DISPNAME").and_then(Value::as_str) == Some(dispname)
+                    && matches!(
+                        e.get("ENABLED").and_then(Value::as_str),
+                        Some("1") | Some("true") | Some("True")
+                    )
+            })
+        })
+        .unwrap_or(false)
+}
+
+/// Apply `cfg` twice; assert the second run is a no-op. With the stub-add +
+/// update-by-`NAME` provider path a single apply lands a provider fully configured
+/// and enabled, so everything converges by the second apply.
 async fn assert_idempotent(url: &str, key: &str, cfg: Value) {
-    run(url, key, cfg.clone(), ApplyOptions::default()).await; // create
-    run(url, key, cfg.clone(), ApplyOptions::default()).await; // converge
-    let last = run(url, key, cfg, ApplyOptions::default()).await; // stable
-    assert_eq!(last.created, 0, "not converged — still creating: {last:?}");
-    assert_eq!(last.updated, 0, "not converged — still updating: {last:?}");
+    run(url, key, cfg.clone(), ApplyOptions::default()).await; // create + configure
+    let second = run(url, key, cfg, ApplyOptions::default()).await; // stable
+    assert_eq!(second.created, 0, "second apply still creating: {second:?}");
+    assert_eq!(second.updated, 0, "second apply still updating: {second:?}");
     assert!(
-        last.unchanged >= 1,
-        "converged apply reported nothing unchanged: {last:?}"
+        second.unchanged >= 1,
+        "second apply reported nothing unchanged: {second:?}"
     );
 }
 
@@ -123,6 +144,53 @@ async fn newznab_provider_upsert_idempotent() {
         }] }),
     )
     .await;
+}
+
+/// A provider must be **enabled after a single apply** — `addProvider` drops
+/// `ENABLED`, so the create path also `changeProvider`s it on. Regression guard
+/// for providers landing disabled (dead weight, never searched).
+#[tokio::test]
+#[ignore]
+async fn newznab_enabled_on_first_apply() {
+    let Some((url, key)) = env() else { return };
+    let name = "cfg-e2e-nz-firstapply";
+    run(
+        &url,
+        &key,
+        json!({ "newznab": [{
+            "dispname": name, "enabled": true,
+            "host": "https://nz1.example.com", "api": "k",
+        }] }),
+        ApplyOptions::default(),
+    )
+    .await; // ONE apply
+    assert!(
+        provider_enabled(&url, &key, "newznab", name).await,
+        "newznab provider not enabled after a single apply"
+    );
+}
+
+/// Same, for an rss provider — the family that used to be create-only. The
+/// stub-add + update-by-internal-`NAME` path enables it on the first apply too.
+#[tokio::test]
+#[ignore]
+async fn rss_enabled_on_first_apply() {
+    let Some((url, key)) = env() else { return };
+    let name = "cfg-e2e-rss-firstapply";
+    run(
+        &url,
+        &key,
+        json!({ "rss": [{
+            "dispname": name, "enabled": true,
+            "host": "https://rss1.example.com", "dl_types": "E",
+        }] }),
+        ApplyOptions::default(),
+    )
+    .await; // ONE apply
+    assert!(
+        provider_enabled(&url, &key, "rss", name).await,
+        "rss provider not enabled after a single apply"
+    );
 }
 
 /// Torznab provider upsert: created/updated to match, then unchanged.

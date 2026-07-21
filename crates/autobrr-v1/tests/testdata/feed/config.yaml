@@ -11,3 +11,5 @@ categories:
   - 2010
 api_key: "${env.FEED_API_KEY}"
 tls_skip_verify: false
+settings:
+  download_type: MAGNET
